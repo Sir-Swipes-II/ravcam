@@ -5,5 +5,6 @@ data class RavMediaSource(
     val name: String,
     val type: MediaSourceType,
     val location: String,
-    val isActive: Boolean = false
+    val isActive: Boolean = false,
+    val createdAtMillis: Long = System.currentTimeMillis()
 )
