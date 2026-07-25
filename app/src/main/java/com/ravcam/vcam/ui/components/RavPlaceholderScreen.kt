@@ -29,6 +29,9 @@ import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.statusBarsPadding
 
 @Composable
 fun RavPlaceholderScreen(
@@ -41,9 +44,18 @@ fun RavPlaceholderScreen(
         modifier = modifier
             .fillMaxSize()
             .background(RavBackgroundDeep)
-            .padding(horizontal = 20.dp, vertical = 18.dp)
     ) {
         Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 18.dp,
+                    bottom = 140.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             Column {

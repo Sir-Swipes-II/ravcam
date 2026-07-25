@@ -1,19 +1,19 @@
 package com.ravcam.vcam.ui.navigation
 
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
@@ -31,50 +31,28 @@ import com.ravcam.vcam.ui.screens.preview.PreviewScreen
 import com.ravcam.vcam.ui.screens.settings.SettingsScreen
 import com.ravcam.vcam.ui.screens.sources.SourcesScreen
 import com.ravcam.vcam.ui.theme.RavBackgroundDeep
-import com.ravcam.vcam.ui.theme.RavBlue
 import com.ravcam.vcam.ui.theme.RavCyan
-import com.ravcam.vcam.ui.theme.RavMagenta
 import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
-import com.ravcam.vcam.ui.theme.RavTextPrimary
 
 @Composable
 fun RavCamApp() {
     val navController = rememberNavController()
 
-    Scaffold(
-        containerColor = RavBackgroundDeep,
-        contentWindowInsets = WindowInsets(
-            left = 0.dp,
-            top = 0.dp,
-            right = 0.dp,
-            bottom = 0.dp
-        ),
-        bottomBar = {
-            RavBottomNavigationBar(
-                currentRoute = navController
-                    .currentBackStackEntryAsState()
-                    .value
-                    ?.destination,
-                onDestinationSelected = { destination ->
-                    navController.navigate(destination.route) {
-                        popUpTo(RavCamDestination.Home.route) {
-                            saveState = true
-                        }
+    val currentDestination = navController
+        .currentBackStackEntryAsState()
+        .value
+        ?.destination
 
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(RavBackgroundDeep)
+    ) {
         NavHost(
             navController = navController,
             startDestination = RavCamDestination.Home.route,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
+            modifier = Modifier.fillMaxSize()
         ) {
             composable(RavCamDestination.Home.route) {
                 RavCamDashboard(
@@ -112,28 +90,46 @@ fun RavCamApp() {
                 )
             }
         }
+
+        RavBottomNavigationBar(
+            currentRoute = currentDestination,
+            onDestinationSelected = { destination ->
+                navController.navigate(destination.route) {
+                    popUpTo(RavCamDestination.Home.route) {
+                        saveState = true
+                    }
+
+                    launchSingleTop = true
+                    restoreState = true
+                }
+            },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(horizontal = 14.dp, vertical = 10.dp)
+        )
     }
 }
 
 @Composable
 private fun RavBottomNavigationBar(
     currentRoute: androidx.navigation.NavDestination?,
-    onDestinationSelected: (RavCamDestination) -> Unit
+    onDestinationSelected: (RavCamDestination) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Box(
-        modifier = Modifier
-            .navigationBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+        modifier = modifier
+            .fillMaxWidth()
             .clip(RoundedCornerShape(26.dp))
-            .background(RavSurface.copy(alpha = 0.92f))
+            .background(RavSurface.copy(alpha = 0.88f))
             .border(
                 width = 1.dp,
-                color = RavCyan.copy(alpha = 0.42f),
+                color = RavCyan.copy(alpha = 0.48f),
                 shape = RoundedCornerShape(26.dp)
             )
     ) {
         NavigationBar(
-            containerColor = RavSurface.copy(alpha = 0.12f),
+            containerColor = RavSurface.copy(alpha = 0.08f),
             tonalElevation = 0.dp
         ) {
             bottomNavDestinations.forEach { destination ->
@@ -149,7 +145,6 @@ private fun RavBottomNavigationBar(
                     icon = {
                         Text(
                             text = destination.navCode,
-                            color = if (selected) RavBackgroundDeep else RavTextMuted,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Black
                         )

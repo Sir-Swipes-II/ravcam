@@ -19,10 +19,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-//import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-//import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -58,22 +58,55 @@ import com.ravcam.vcam.ui.theme.RavTextSecondary
 fun RavCamDashboard(
     modifier: Modifier = Modifier
 ) {
+
     Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
+//            .background(
+//                Brush.radialGradient(
+//                    colors = listOf(
+//                        Color(0xFF0B2440),
+//                        RavBackground,
+//                        RavBackgroundDeep
+//                    ),
+//                    radius = 1300f
+//                )
+//            )
             .background(RavBackgroundDeep)
     ) {
+//        GlowOrb(
+//            color = RavCyan,
+//            size = 260,
+//            x = (-80),
+//            y = 40
+//        )
+//
+//        GlowOrb(
+//            color = RavMagenta,
+//            size = 220,
+//            x = 250,
+//            y = 130
+//        )
+//
+//        GlowOrb(
+//            color = RavBlue,
+//            size = 260,
+//            x = 120,
+//            y = 520
+//        )
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
                 .padding(
                     start = 20.dp,
                     end = 20.dp,
-                    top = 10.dp,
-                    bottom = 10.dp
+                    top = 18.dp,
+                    bottom = 140.dp
                 ),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             HeaderSection()
 
@@ -81,12 +114,11 @@ fun RavCamDashboard(
 
             PrimaryActions()
 
-            // We are moving these into Diagnostics later
-            // so Home fits cleanly without scrolling.
-            // QuickStatusGrid()
-            // SystemSignalCard()
+            QuickStatusGrid()
 
-            // BottomNavMock() is no longer needed.
+            SystemSignalCard()
+
+            //BottomNavMock()
         }
     }
 }
