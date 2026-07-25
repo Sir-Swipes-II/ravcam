@@ -57,9 +57,11 @@ import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
+import com.ravcam.vcam.ui.state.RavCamSourceState
 
 @Composable
 fun SourcesScreen(
+    sourceState: RavCamSourceState,
     modifier: Modifier = Modifier
 ) {
     var selectedType by remember {
@@ -74,33 +76,9 @@ fun SourcesScreen(
         mutableStateOf("")
     }
 
-    val savedSources = remember {
-        mutableStateMapOf(
-            SourceSlot.VIDEO to RavMediaSource(
-                id = "source_video",
-                name = "Demo Local MP4",
-                type = MediaSourceType.MP4,
-                location = "/storage/emulated/0/Movies/demo.mp4"
-            ),
-
-            SourceSlot.IMAGE to RavMediaSource(
-                id = "source_image",
-                name = "Fallback Image",
-                type = MediaSourceType.IMAGE,
-                location = "/storage/emulated/0/Pictures/ravcam.jpg"
-            ),
-
-            SourceSlot.STREAM to RavMediaSource(
-                id = "source_stream",
-                name = "OBS Stream",
-                type = MediaSourceType.RTMP,
-                location = "rtmp://192.168.1.10/live/ravcam"
-            )
-        )
-    }
 
 
-    val activeSource = savedSources.values.firstOrNull { it.isActive }
+//    val activeSource = savedSources.values.firstOrNull { it.isActive }
 
     Box(
         modifier = modifier
@@ -123,7 +101,7 @@ fun SourcesScreen(
             SourcesHeader()
 
             ActiveSourceCard(
-                activeSource = activeSource
+                activeSource = sourceState.activeSource
             )
 
             SourceTypeDropdown(
@@ -143,44 +121,43 @@ fun SourcesScreen(
                 onSourceLocationChange = { sourceLocation = it },
                 onAddSource = {
                     val type = selectedType ?: return@SourceSetupCard
-                    val slot = type.toSourceSlot()
 
-                    savedSources[slot] = RavMediaSource(
-                        id = "source_${slot.name.lowercase()}",
-                        name = sourceName.trim(),
+                    sourceState.saveSource(
+                        name = sourceName,
                         type = type,
-                        location = sourceLocation.trim(),
-                        isActive = false
+                        location = sourceLocation
                     )
 
                     selectedType = null
                     sourceName = ""
                     sourceLocation = ""
                 }
+//                onAddSource = {
+//                    val type = selectedType ?: return@SourceSetupCard
+//                    val slot = type.toSourceSlot()
+//
+//                    savedSources[slot] = RavMediaSource(
+//                        id = "source_${slot.name.lowercase()}",
+//                        name = sourceName.trim(),
+//                        type = type,
+//                        location = sourceLocation.trim(),
+//                        isActive = false
+//                    )
+//
+//                    selectedType = null
+//                    sourceName = ""
+//                    sourceLocation = ""
+//                }
             )
 
 
             SavedSourcesList(
-                sourcesBySlot = savedSources,
+                sourcesBySlot = sourceState.sourcesBySlot,
                 onToggleSource = { selectedSource ->
-                    val shouldStop = selectedSource.isActive
-
-                    SourceSlot.entries.forEach { slot ->
-                        savedSources[slot]?.let { source ->
-                            savedSources[slot] = source.copy(
-                                isActive = if (shouldStop) {
-                                    false
-                                } else {
-                                    source.id == selectedSource.id
-                                }
-                            )
-                        }
-                    }
+                    sourceState.toggleSource(selectedSource)
                 },
                 onDeleteSource = { selectedSource ->
-                    savedSources.remove(
-                        selectedSource.type.toSourceSlot()
-                    )
+                    sourceState.deleteSource(selectedSource)
                 }
             )
         }
