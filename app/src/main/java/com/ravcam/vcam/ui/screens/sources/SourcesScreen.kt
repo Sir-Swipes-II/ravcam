@@ -25,7 +25,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
+import com.ravcam.vcam.domain.models.SourceSlot
+import com.ravcam.vcam.domain.models.toSourceSlot
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,29 +75,32 @@ fun SourcesScreen(
     }
 
     val savedSources = remember {
-        mutableStateListOf(
-            RavMediaSource(
-                id = "demo_mp4",
+        mutableStateMapOf(
+            SourceSlot.VIDEO to RavMediaSource(
+                id = "source_video",
                 name = "Demo Local MP4",
                 type = MediaSourceType.MP4,
                 location = "/storage/emulated/0/Movies/demo.mp4"
             ),
-            RavMediaSource(
-                id = "obs_rtmp",
-                name = "OBS Stream",
-                type = MediaSourceType.RTMP,
-                location = "rtmp://192.168.1.10/live/ravcam"
-            ),
-            RavMediaSource(
-                id = "static_image",
+
+            SourceSlot.IMAGE to RavMediaSource(
+                id = "source_image",
                 name = "Fallback Image",
                 type = MediaSourceType.IMAGE,
                 location = "/storage/emulated/0/Pictures/ravcam.jpg"
+            ),
+
+            SourceSlot.STREAM to RavMediaSource(
+                id = "source_stream",
+                name = "OBS Stream",
+                type = MediaSourceType.RTMP,
+                location = "rtmp://192.168.1.10/live/ravcam"
             )
         )
     }
 
-    val activeSource = savedSources.firstOrNull { it.isActive }
+
+    val activeSource = savedSources.values.firstOrNull { it.isActive }
 
     Box(
         modifier = modifier
@@ -138,14 +143,14 @@ fun SourcesScreen(
                 onSourceLocationChange = { sourceLocation = it },
                 onAddSource = {
                     val type = selectedType ?: return@SourceSetupCard
+                    val slot = type.toSourceSlot()
 
-                    savedSources.add(
-                        RavMediaSource(
-                            id = "source_${System.currentTimeMillis()}",
-                            name = sourceName.trim(),
-                            type = type,
-                            location = sourceLocation.trim()
-                        )
+                    savedSources[slot] = RavMediaSource(
+                        id = "source_${slot.name.lowercase()}",
+                        name = sourceName.trim(),
+                        type = type,
+                        location = sourceLocation.trim(),
+                        isActive = false
                     )
 
                     selectedType = null
@@ -154,20 +159,28 @@ fun SourcesScreen(
                 }
             )
 
-            SavedSourcesList(
-                sources = savedSources,
-                onActivateSource = { selectedSource ->
-                    val updated = savedSources.map { source ->
-                        source.copy(
-                            isActive = source.id == selectedSource.id
-                        )
-                    }
 
-                    savedSources.clear()
-                    savedSources.addAll(updated)
+            SavedSourcesList(
+                sourcesBySlot = savedSources,
+                onToggleSource = { selectedSource ->
+                    val shouldStop = selectedSource.isActive
+
+                    SourceSlot.entries.forEach { slot ->
+                        savedSources[slot]?.let { source ->
+                            savedSources[slot] = source.copy(
+                                isActive = if (shouldStop) {
+                                    false
+                                } else {
+                                    source.id == selectedSource.id
+                                }
+                            )
+                        }
+                    }
                 },
                 onDeleteSource = { selectedSource ->
-                    savedSources.removeAll { it.id == selectedSource.id }
+                    savedSources.remove(
+                        selectedSource.type.toSourceSlot()
+                    )
                 }
             )
         }
@@ -692,8 +705,8 @@ private fun RavTextField(
 
 @Composable
 private fun SavedSourcesList(
-    sources: List<RavMediaSource>,
-    onActivateSource: (RavMediaSource) -> Unit,
+    sourcesBySlot: Map<SourceSlot, RavMediaSource>,
+    onToggleSource: (RavMediaSource) -> Unit,
     onDeleteSource: (RavMediaSource) -> Unit
 ) {
     Column(
@@ -708,14 +721,15 @@ private fun SavedSourcesList(
             letterSpacing = 1.2.sp
         )
 
-        sources.forEach { source ->
+        SourceSlot.entries.forEach { slot ->
             SavedSourceCard(
-                source = source,
-                onActivateSource = {
-                    onActivateSource(source)
+                slot = slot,
+                source = sourcesBySlot[slot],
+                onToggleSource = {
+                    sourcesBySlot[slot]?.let(onToggleSource)
                 },
                 onDeleteSource = {
-                    onDeleteSource(source)
+                    sourcesBySlot[slot]?.let(onDeleteSource)
                 }
             )
         }
@@ -724,8 +738,9 @@ private fun SavedSourcesList(
 
 @Composable
 private fun SavedSourceCard(
-    source: RavMediaSource,
-    onActivateSource: () -> Unit,
+    slot: SourceSlot,
+    source: RavMediaSource?,
+    onToggleSource: () -> Unit,
     onDeleteSource: () -> Unit
 ) {
     GlassPanel(
@@ -735,58 +750,77 @@ private fun SavedSourceCard(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(
-                modifier = Modifier.weight(1f)
+            Text(
+                text = slot.label.uppercase(),
+                color = RavCyan,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.2.sp
+            )
+
+            SourceBadge(
+                text = source?.type?.shortCode ?: slot.shortCode,
+                active = source?.isActive == true
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (source == null) {
+            Text(
+                text = "Not Configured",
+                color = RavTextPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(7.dp))
+
+            Text(
+                text = slot.emptyMessage,
+                color = RavTextMuted,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        } else {
+            Text(
+                text = source.name,
+                color = RavTextPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = source.location,
+                color = RavTextMuted,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                fontFamily = FontFamily.Monospace
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = source.name,
-                        color = RavTextPrimary,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    SourceBadge(
-                        text = source.type.shortCode,
-                        active = source.isActive
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = source.location,
-                    color = RavTextMuted,
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp,
-                    fontFamily = FontFamily.Monospace
+                SmallActionButton(
+                    text = if (source.isActive) "STOP" else "ACTIVATE",
+                    color = if (source.isActive) RavAmber else RavCyan,
+                    modifier = Modifier.weight(1f),
+                    onClick = onToggleSource
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    SmallActionButton(
-                        text = if (source.isActive) "ACTIVE" else "ACTIVATE",
-                        color = if (source.isActive) RavGreen else RavCyan,
-                        enabled = !source.isActive,
-                        modifier = Modifier.weight(1f),
-                        onClick = onActivateSource
-                    )
-
-                    SmallActionButton(
-                        text = "DELETE",
-                        color = RavMagenta,
-                        modifier = Modifier.weight(1f),
-                        onClick = onDeleteSource
-                    )
-                }
+                SmallActionButton(
+                    text = "DELETE",
+                    color = RavMagenta,
+                    modifier = Modifier.weight(1f),
+                    onClick = onDeleteSource
+                )
             }
         }
     }
