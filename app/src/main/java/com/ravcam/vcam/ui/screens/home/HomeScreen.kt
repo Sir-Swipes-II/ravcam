@@ -13,16 +13,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
+//import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
+//import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+//import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -55,51 +55,25 @@ import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
 
 @Composable
-fun RavCamDashboard() {
+fun RavCamDashboard(
+    modifier: Modifier = Modifier
+) {
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-//            .background(
-//                Brush.radialGradient(
-//                    colors = listOf(
-//                        Color(0xFF0B2440),
-//                        RavBackground,
-//                        RavBackgroundDeep
-//                    ),
-//                    radius = 1300f
-//                )
-//            )
             .background(RavBackgroundDeep)
     ) {
-//        GlowOrb(
-//            color = RavCyan,
-//            size = 260,
-//            x = (-80),
-//            y = 40
-//        )
-//
-//        GlowOrb(
-//            color = RavMagenta,
-//            size = 220,
-//            x = 250,
-//            y = 130
-//        )
-//
-//        GlowOrb(
-//            color = RavBlue,
-//            size = 260,
-//            x = 120,
-//            y = 520
-//        )
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .navigationBarsPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+                .padding(
+                    start = 20.dp,
+                    end = 20.dp,
+                    top = 10.dp,
+                    bottom = 10.dp
+                ),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             HeaderSection()
 
@@ -107,11 +81,12 @@ fun RavCamDashboard() {
 
             PrimaryActions()
 
-            QuickStatusGrid()
+            // We are moving these into Diagnostics later
+            // so Home fits cleanly without scrolling.
+            // QuickStatusGrid()
+            // SystemSignalCard()
 
-            SystemSignalCard()
-
-            BottomNavMock()
+            // BottomNavMock() is no longer needed.
         }
     }
 }
