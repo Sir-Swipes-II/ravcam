@@ -38,6 +38,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import com.ravcam.vcam.domain.models.MediaSourceType
 import com.ravcam.vcam.domain.models.RavMediaSource
 import com.ravcam.vcam.ui.theme.RavAmber
@@ -202,6 +207,34 @@ private fun locationPlaceholderForType(type: MediaSourceType?): String {
         MediaSourceType.HTTP -> "https://server/video.mjpeg"
         null -> "Select a source type first"
     }
+}
+
+private fun MediaSourceType.isLocalPickerType(): Boolean {
+    return this == MediaSourceType.MP4 ||
+            this == MediaSourceType.IMAGE ||
+            this == MediaSourceType.GIF
+}
+
+private fun mimeTypesForType(type: MediaSourceType?): Array<String> {
+    return when (type) {
+        MediaSourceType.MP4 -> arrayOf("video/mp4", "video/*")
+        MediaSourceType.IMAGE -> arrayOf("image/*")
+        MediaSourceType.GIF -> arrayOf("image/gif")
+        else -> arrayOf("*/*")
+    }
+}
+
+private fun pickedFileLabel(type: MediaSourceType?): String {
+    return when (type) {
+        MediaSourceType.MP4 -> "Pick MP4 Video"
+        MediaSourceType.IMAGE -> "Pick Image"
+        MediaSourceType.GIF -> "Pick GIF"
+        else -> "Pick File"
+    }
+}
+
+private fun pickedUriDisplay(uriText: String): String {
+    return Uri.parse(uriText).lastPathSegment ?: uriText
 }
 
 @Composable
@@ -426,6 +459,27 @@ private fun SourceSetupCard(
     onSourceLocationChange: (String) -> Unit,
     onAddSource: () -> Unit
 ) {
+    val context = LocalContext.current
+    val isLocalPicker = selectedType?.isLocalPickerType() == true
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // Some providers may not grant persistable permission.
+                // The URI can still be used during the current session.
+            }
+
+            onSourceLocationChange(uri.toString())
+        }
+    }
+
     val canAddSource = selectedType != null &&
             sourceName.trim().isNotEmpty() &&
             sourceLocation.trim().isNotEmpty()
@@ -471,13 +525,25 @@ private fun SourceSetupCard(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        RavTextField(
-            value = sourceLocation,
-            onValueChange = onSourceLocationChange,
-            label = locationLabelForType(selectedType),
-            placeholder = locationPlaceholderForType(selectedType),
-            enabled = selectedType != null
-        )
+        if (isLocalPicker) {
+            FilePickerPanel(
+                selectedType = selectedType,
+                sourceLocation = sourceLocation,
+                onPickFile = {
+                    filePickerLauncher.launch(
+                        mimeTypesForType(selectedType)
+                    )
+                }
+            )
+        } else {
+            RavTextField(
+                value = sourceLocation,
+                onValueChange = onSourceLocationChange,
+                label = locationLabelForType(selectedType),
+                placeholder = locationPlaceholderForType(selectedType),
+                enabled = selectedType != null
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -508,6 +574,73 @@ private fun SourceSetupCard(
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.4.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilePickerPanel(
+    selectedType: MediaSourceType?,
+    sourceLocation: String,
+    onPickFile: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(RavSurface.copy(alpha = 0.38f))
+            .border(
+                width = 1.dp,
+                color = RavCyan.copy(alpha = 0.32f),
+                shape = RoundedCornerShape(20.dp)
+            )
+            .padding(14.dp)
+    ) {
+        Text(
+            text = locationLabelForType(selectedType).uppercase(),
+            color = RavTextMuted,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.sp
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        Text(
+            text = if (sourceLocation.isBlank()) {
+                "No file selected"
+            } else {
+                pickedUriDisplay(sourceLocation)
+            },
+            color = if (sourceLocation.isBlank()) RavTextSecondary else RavTextPrimary,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            fontFamily = FontFamily.Monospace
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Button(
+            onClick = onPickFile,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(
+                width = 1.dp,
+                color = RavCyan.copy(alpha = 0.8f)
+            ),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = RavCyan.copy(alpha = 0.12f),
+                contentColor = RavTextPrimary
+            )
+        ) {
+            Text(
+                text = pickedFileLabel(selectedType).uppercase(),
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp
             )
         }
     }
