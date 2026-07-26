@@ -48,17 +48,32 @@ import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
+import com.ravcam.vcam.domain.models.MediaSourceType
+
+
+private fun MediaSourceType.supportsInAppPreview(): Boolean {
+    return this == MediaSourceType.MP4 ||
+            this == MediaSourceType.IMAGE ||
+            this == MediaSourceType.GIF
+}
 
 @Composable
 fun PreviewScreen(
     activeSource: RavMediaSource?,
     modifier: Modifier = Modifier
 ) {
+    val canPreview =
+        activeSource?.type?.supportsInAppPreview() == true
+
     var isPreviewRunning by rememberSaveable {
         mutableStateOf(false)
     }
 
-    LaunchedEffect(activeSource?.id) {
+    LaunchedEffect(
+        activeSource?.id,
+        activeSource?.type,
+        activeSource?.location
+    ) {
         isPreviewRunning = false
     }
 
@@ -81,6 +96,7 @@ fun PreviewScreen(
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             PreviewHeader(
+                activeSource = activeSource,
                 isPreviewRunning = isPreviewRunning
             )
 
@@ -93,7 +109,7 @@ fun PreviewScreen(
                 activeSource = activeSource,
                 isPreviewRunning = isPreviewRunning,
                 onTogglePreview = {
-                    if (activeSource != null) {
+                    if (canPreview) {
                         isPreviewRunning = !isPreviewRunning
                     }
                 }
@@ -109,8 +125,39 @@ fun PreviewScreen(
 
 @Composable
 private fun PreviewHeader(
+    activeSource: RavMediaSource?,
     isPreviewRunning: Boolean
 ) {
+    val statusText: String
+    val statusColor: Color
+
+    when {
+        isPreviewRunning -> {
+            statusText = "RUNNING"
+            statusColor = RavGreen
+        }
+
+        activeSource == null -> {
+            statusText = "STANDBY"
+            statusColor = RavAmber
+        }
+
+        activeSource.type == MediaSourceType.RTMP -> {
+            statusText = "OBS"
+            statusColor = RavBlue
+        }
+
+        activeSource.type.supportsInAppPreview() -> {
+            statusText = "READY"
+            statusColor = RavCyan
+        }
+
+        else -> {
+            statusText = "PENDING"
+            statusColor = RavAmber
+        }
+    }
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -136,12 +183,14 @@ private fun PreviewHeader(
             }
 
             PreviewStatusPill(
-                text = if (isPreviewRunning) "RUNNING" else "STANDBY",
-                color = if (isPreviewRunning) RavGreen else RavAmber
+                text = statusText,
+                color = statusColor
             )
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(
+            modifier = Modifier.height(14.dp)
+        )
 
         Text(
             text = "Inspect the currently active source before output routing.",
@@ -162,15 +211,7 @@ private fun PreviewViewport(
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(28.dp))
-            .background(
-                Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF020610),
-                        RavSurface.copy(alpha = 0.82f),
-                        Color(0xFF030711)
-                    )
-                )
-            )
+            .background(RavBackgroundDeep)
             .border(
                 width = 1.dp,
                 brush = Brush.linearGradient(
@@ -181,53 +222,94 @@ private fun PreviewViewport(
                     )
                 ),
                 shape = RoundedCornerShape(28.dp)
+            )
+    ) {
+        when {
+            activeSource == null -> {
+                PreviewViewportMessage(
+                    title = "NO SIGNAL",
+                    message = "Activate a source from the Sources screen.",
+                    titleColor = RavTextMuted
+                )
+            }
+
+            activeSource.type == MediaSourceType.RTMP -> {
+                PreviewViewportMessage(
+                    title = "PREVIEW IN OBS",
+                    message = "RTMP is already monitored from OBS and does not require an in-app preview.",
+                    titleColor = RavBlue
+                )
+            }
+
+            activeSource.type == MediaSourceType.RTSP ||
+                    activeSource.type == MediaSourceType.HTTP -> {
+                PreviewViewportMessage(
+                    title = "NETWORK SOURCE",
+                    message = "RTSP and HTTP preview will be added in the network media phase.",
+                    titleColor = RavAmber
+                )
+            }
+
+            !isPreviewRunning -> {
+                PreviewViewportMessage(
+                    title = "SOURCE READY",
+                    message = "Press Start Preview to initialize the renderer.",
+                    titleColor = RavTextSecondary
+                )
+            }
+
+            else -> {
+                PreviewMediaRenderer(
+                    source = activeSource,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewViewportMessage(
+    title: String,
+    message: String,
+    titleColor: Color
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(
+                horizontal = 22.dp,
+                vertical = 16.dp
             ),
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = 20.dp,
-                    vertical = 12.dp
-                ),
+            modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = when {
-                    activeSource == null -> "NO SIGNAL"
-                    isPreviewRunning -> activeSource.type.shortCode
-                    else -> "SOURCE READY"
-                },
+                text = title,
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center,
-                color = when {
-                    activeSource == null -> RavTextMuted
-                    isPreviewRunning -> RavCyan
-                    else -> RavTextSecondary
-                },
-                fontSize = if (isPreviewRunning) 32.sp else 18.sp,
+                color = titleColor,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Black,
                 fontFamily = FontFamily.Monospace,
-                letterSpacing = 2.sp
+                letterSpacing = 2.sp,
+                textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
 
             Text(
-                text = when {
-                    activeSource == null ->
-                        "Activate a source from the Sources screen."
-
-                    isPreviewRunning ->
-                        activeSource.name
-
-                    else ->
-                        "Press Start Preview to initialize the renderer."
-                },
+                text = message,
+                modifier = Modifier.fillMaxWidth(),
                 color = RavTextSecondary,
                 fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace
+                lineHeight = 18.sp,
+                fontFamily = FontFamily.Monospace,
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -239,6 +321,8 @@ private fun PreviewControlCard(
     isPreviewRunning: Boolean,
     onTogglePreview: () -> Unit
 ) {
+    val canPreview = activeSource?.type?.supportsInAppPreview() == true
+
     PreviewGlassPanel {
         Text(
             text = "PREVIEW CONTROL",
@@ -261,8 +345,23 @@ private fun PreviewControlCard(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = activeSource?.location
-                ?: "Return to Sources and activate an MP4, image, GIF, or network stream.",
+            text = when {
+                activeSource == null ->
+                    "NO ACTIVE SOURCE"
+
+                activeSource.type == MediaSourceType.RTMP ->
+                    "PREVIEW AVAILABLE IN OBS"
+
+                activeSource.type == MediaSourceType.RTSP ||
+                        activeSource.type == MediaSourceType.HTTP ->
+                    "NETWORK PREVIEW NOT READY"
+
+                isPreviewRunning ->
+                    "STOP PREVIEW"
+
+                else ->
+                    "START PREVIEW"
+            },
             color = RavTextMuted,
             fontSize = 11.sp,
             lineHeight = 16.sp,
@@ -273,7 +372,7 @@ private fun PreviewControlCard(
 
         Button(
             onClick = onTogglePreview,
-            enabled = activeSource != null,
+            enabled = canPreview,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -281,16 +380,26 @@ private fun PreviewControlCard(
             border = BorderStroke(
                 width = 1.dp,
                 color = when {
-                    activeSource == null -> RavTextMuted.copy(alpha = 0.3f)
-                    isPreviewRunning -> RavMagenta
-                    else -> RavCyan
+                    !canPreview ->
+                        RavTextMuted.copy(alpha = 0.3f)
+
+                    isPreviewRunning ->
+                        RavMagenta
+
+                    else ->
+                        RavCyan
                 }
             ),
             colors = ButtonDefaults.buttonColors(
                 containerColor = when {
-                    activeSource == null -> RavSurface.copy(alpha = 0.3f)
-                    isPreviewRunning -> RavMagenta.copy(alpha = 0.13f)
-                    else -> RavCyan.copy(alpha = 0.13f)
+                    !canPreview ->
+                        RavSurface.copy(alpha = 0.3f)
+
+                    isPreviewRunning ->
+                        RavMagenta.copy(alpha = 0.13f)
+
+                    else ->
+                        RavCyan.copy(alpha = 0.13f)
                 },
                 disabledContainerColor = RavSurface.copy(alpha = 0.28f),
                 contentColor = RavTextPrimary,
