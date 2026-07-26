@@ -54,7 +54,9 @@ import com.ravcam.vcam.domain.models.MediaSourceType
 private fun MediaSourceType.supportsInAppPreview(): Boolean {
     return this == MediaSourceType.MP4 ||
             this == MediaSourceType.IMAGE ||
-            this == MediaSourceType.GIF
+            this == MediaSourceType.GIF ||
+            this == MediaSourceType.RTSP ||
+            this == MediaSourceType.HTTP
 }
 
 @Composable
@@ -241,15 +243,6 @@ private fun PreviewViewport(
                 )
             }
 
-            activeSource.type == MediaSourceType.RTSP ||
-                    activeSource.type == MediaSourceType.HTTP -> {
-                PreviewViewportMessage(
-                    title = "NETWORK SOURCE",
-                    message = "RTSP and HTTP preview will be added in the network media phase.",
-                    titleColor = RavAmber
-                )
-            }
-
             !isPreviewRunning -> {
                 PreviewViewportMessage(
                     title = "SOURCE READY",
@@ -345,23 +338,8 @@ private fun PreviewControlCard(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = when {
-                activeSource == null ->
-                    "NO ACTIVE SOURCE"
-
-                activeSource.type == MediaSourceType.RTMP ->
-                    "PREVIEW AVAILABLE IN OBS"
-
-                activeSource.type == MediaSourceType.RTSP ||
-                        activeSource.type == MediaSourceType.HTTP ->
-                    "NETWORK PREVIEW NOT READY"
-
-                isPreviewRunning ->
-                    "STOP PREVIEW"
-
-                else ->
-                    "START PREVIEW"
-            },
+            text = activeSource?.location
+                ?: "Return to Sources and activate a media source.",
             color = RavTextMuted,
             fontSize = 11.sp,
             lineHeight = 16.sp,
@@ -409,6 +387,7 @@ private fun PreviewControlCard(
             Text(
                 text = when {
                     activeSource == null -> "NO ACTIVE SOURCE"
+                    activeSource.type == MediaSourceType.RTMP -> "PREVIEW AVAILABLE IN OBS"
                     isPreviewRunning -> "STOP PREVIEW"
                     else -> "START PREVIEW"
                 },

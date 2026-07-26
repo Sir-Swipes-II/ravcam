@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -28,14 +29,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.ravcam.vcam.domain.models.MediaSourceType
 import com.ravcam.vcam.domain.models.RavMediaSource
 import com.ravcam.vcam.ui.theme.RavBackgroundDeep
+import com.ravcam.vcam.ui.theme.RavBlue
 import com.ravcam.vcam.ui.theme.RavCyan
 import com.ravcam.vcam.ui.theme.RavMagenta
 import com.ravcam.vcam.ui.theme.RavTextPrimary
@@ -54,8 +58,10 @@ internal fun PreviewMediaRenderer(
     modifier: Modifier = Modifier
 ) {
     when (source.type) {
-        MediaSourceType.MP4 -> {
-            Mp4PreviewRenderer(
+        MediaSourceType.MP4,
+        MediaSourceType.RTSP,
+        MediaSourceType.HTTP -> {
+            ExoPlayerPreviewRenderer(
                 source = source,
                 modifier = modifier
             )
@@ -73,17 +79,7 @@ internal fun PreviewMediaRenderer(
             RendererMessage(
                 title = "OBS PREVIEW",
                 message = "RTMP preview is handled externally in OBS.",
-                color = RavCyan,
-                modifier = modifier
-            )
-        }
-
-        MediaSourceType.RTSP,
-        MediaSourceType.HTTP -> {
-            RendererMessage(
-                title = "NETWORK SOURCE",
-                message = "Network preview will be added in the next phase.",
-                color = RavCyan,
+                color = RavBlue,
                 modifier = modifier
             )
         }
@@ -91,59 +87,97 @@ internal fun PreviewMediaRenderer(
 }
 
 @Composable
-private fun Mp4PreviewRenderer(
+private fun ExoPlayerPreviewRenderer(
     source: RavMediaSource,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
     val mediaUri = remember(source.location) {
         sourceLocationToUri(source.location)
     }
 
-    var rendererState by remember(source.location) {
+    val mediaItem = remember(
+        source.type,
+        source.location
+    ) {
+        buildMediaItem(
+            source = source,
+            uri = mediaUri
+        )
+    }
+
+    var rendererState by remember(
+        source.type,
+        source.location
+    ) {
         mutableStateOf(RendererLoadState.LOADING)
     }
 
-    var errorMessage by remember(source.location) {
+    var errorMessage by remember(
+        source.type,
+        source.location
+    ) {
         mutableStateOf<String?>(null)
     }
 
-    val player = remember(source.location) {
+    val player = remember(
+        source.id,
+        source.type,
+        source.location
+    ) {
         ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
+            repeatMode = if (source.type == MediaSourceType.MP4) {
+                Player.REPEAT_MODE_ONE
+            } else {
+                Player.REPEAT_MODE_OFF
+            }
 
-            // Avoid audio feedback while using RavCam as a preview monitor.
+            // Preview is muted to prevent monitor feedback.
             volume = 0f
-
-            setMediaItem(
-                MediaItem.fromUri(mediaUri)
-            )
-
-            prepare()
-            playWhenReady = true
         }
     }
 
-    DisposableEffect(player) {
+    DisposableEffect(
+        player,
+        mediaItem
+    ) {
         val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                rendererState = when (playbackState) {
-                    Player.STATE_BUFFERING -> RendererLoadState.LOADING
-                    Player.STATE_READY,
-                    Player.STATE_ENDED -> RendererLoadState.READY
 
-                    else -> rendererState
+            override fun onPlaybackStateChanged(
+                playbackState: Int
+            ) {
+                rendererState = when (playbackState) {
+                    Player.STATE_BUFFERING ->
+                        RendererLoadState.LOADING
+
+                    Player.STATE_READY,
+                    Player.STATE_ENDED ->
+                        RendererLoadState.READY
+
+                    else ->
+                        rendererState
                 }
             }
 
-            override fun onPlayerError(error: PlaybackException) {
+            override fun onPlayerError(
+                error: PlaybackException
+            ) {
                 rendererState = RendererLoadState.ERROR
+
                 errorMessage = error.localizedMessage
-                    ?: "Unable to play the selected MP4."
+                    ?: defaultPlaybackError(source.type)
             }
         }
 
         player.addListener(listener)
+
+        rendererState = RendererLoadState.LOADING
+        errorMessage = null
+
+        player.setMediaItem(mediaItem)
+        player.prepare()
+        player.playWhenReady = true
 
         onDispose {
             player.removeListener(listener)
@@ -161,6 +195,10 @@ private fun Mp4PreviewRenderer(
                 PlayerView(viewContext).apply {
                     useController = false
                     keepScreenOn = true
+
+                    resizeMode =
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+
                     this.player = player
                 }
             },
@@ -173,15 +211,15 @@ private fun Mp4PreviewRenderer(
         when (rendererState) {
             RendererLoadState.LOADING -> {
                 RendererLoadingOverlay(
-                    title = "LOADING MP4"
+                    title = loadingTitle(source.type)
                 )
             }
 
             RendererLoadState.ERROR -> {
                 RendererMessage(
-                    title = "PLAYBACK ERROR",
+                    title = errorTitle(source.type),
                     message = errorMessage
-                        ?: "Unable to play the selected MP4.",
+                        ?: defaultPlaybackError(source.type),
                     color = RavMagenta,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -229,7 +267,9 @@ private fun ImagePreviewRenderer(
         when (rendererState) {
             RendererLoadState.LOADING -> {
                 RendererLoadingOverlay(
-                    title = if (source.type == MediaSourceType.GIF) {
+                    title = if (
+                        source.type == MediaSourceType.GIF
+                    ) {
                         "LOADING GIF"
                     } else {
                         "LOADING IMAGE"
@@ -240,7 +280,8 @@ private fun ImagePreviewRenderer(
             RendererLoadState.ERROR -> {
                 RendererMessage(
                     title = "IMAGE ERROR",
-                    message = "Unable to decode the selected image or GIF.",
+                    message =
+                        "Unable to decode the selected image or GIF.",
                     color = RavMagenta,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -248,6 +289,68 @@ private fun ImagePreviewRenderer(
 
             RendererLoadState.READY -> Unit
         }
+    }
+}
+
+private fun buildMediaItem(
+    source: RavMediaSource,
+    uri: Uri
+): MediaItem {
+    val builder = MediaItem.Builder()
+        .setUri(uri)
+
+    val path = uri.path
+        ?.lowercase()
+        .orEmpty()
+
+    if (
+        source.type == MediaSourceType.HTTP &&
+        path.endsWith(".m3u8")
+    ) {
+        builder.setMimeType(
+            MimeTypes.APPLICATION_M3U8
+        )
+    }
+
+    return builder.build()
+}
+
+private fun loadingTitle(
+    type: MediaSourceType
+): String {
+    return when (type) {
+        MediaSourceType.MP4 -> "LOADING MP4"
+        MediaSourceType.RTSP -> "CONNECTING RTSP"
+        MediaSourceType.HTTP -> "CONNECTING HTTP"
+        else -> "LOADING MEDIA"
+    }
+}
+
+private fun errorTitle(
+    type: MediaSourceType
+): String {
+    return when (type) {
+        MediaSourceType.RTSP -> "RTSP ERROR"
+        MediaSourceType.HTTP -> "HTTP ERROR"
+        else -> "PLAYBACK ERROR"
+    }
+}
+
+private fun defaultPlaybackError(
+    type: MediaSourceType
+): String {
+    return when (type) {
+        MediaSourceType.RTSP ->
+            "Unable to connect to the RTSP source."
+
+        MediaSourceType.HTTP ->
+            "Unable to play the HTTP or HLS source."
+
+        MediaSourceType.MP4 ->
+            "Unable to play the selected MP4."
+
+        else ->
+            "Unable to initialize this media source."
     }
 }
 
@@ -264,7 +367,8 @@ private fun RendererLoadingOverlay(
         contentAlignment = Alignment.Center
     ) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment =
+                Alignment.CenterHorizontally
         ) {
             CircularProgressIndicator(
                 color = RavCyan
@@ -304,10 +408,13 @@ private fun RendererMessage(
         contentAlignment = Alignment.Center
     ) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment =
+                Alignment.CenterHorizontally
         ) {
             Text(
                 text = title,
+                modifier = Modifier.fillMaxWidth(),
                 color = color,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Black,
@@ -322,6 +429,7 @@ private fun RendererMessage(
 
             Text(
                 text = message,
+                modifier = Modifier.fillMaxWidth(),
                 color = RavTextSecondary,
                 fontSize = 12.sp,
                 lineHeight = 18.sp,

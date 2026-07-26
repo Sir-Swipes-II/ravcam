@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+        RavCam accepts user-configured HTTP media sources, including
+        local-network servers that may not provide HTTPS.
+
+        This currently permits cleartext HTTP globally. Restrict this
+        later when RavCam has a dedicated trusted-host configuration.
+    -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
