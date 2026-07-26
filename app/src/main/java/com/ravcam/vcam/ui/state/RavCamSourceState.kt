@@ -2,17 +2,32 @@ package com.ravcam.vcam.ui.state
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.ravcam.vcam.datastore.SourcePreferencesRepository
 import com.ravcam.vcam.domain.models.MediaSourceType
 import com.ravcam.vcam.domain.models.RavMediaSource
 import com.ravcam.vcam.domain.models.SourceSlot
 import com.ravcam.vcam.domain.models.toSourceSlot
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 @Stable
-class RavCamSourceState {
+class RavCamSourceState(
+    private val repository: SourcePreferencesRepository,
+    private val coroutineScope: CoroutineScope
+) {
+    val sourcesBySlot =
+        mutableStateMapOf<SourceSlot, RavMediaSource>()
 
-    val sourcesBySlot = mutableStateMapOf<SourceSlot, RavMediaSource>()
+    var isLoaded by mutableStateOf(false)
+        private set
 
     val activeSource: RavMediaSource?
         get() = sourcesBySlot.values.firstOrNull { source ->
@@ -20,26 +35,13 @@ class RavCamSourceState {
         }
 
     init {
-        sourcesBySlot[SourceSlot.VIDEO] = RavMediaSource(
-            id = "source_video",
-            name = "Demo Local MP4",
-            type = MediaSourceType.MP4,
-            location = "/storage/emulated/0/Movies/demo.mp4"
-        )
-
-        sourcesBySlot[SourceSlot.IMAGE] = RavMediaSource(
-            id = "source_image",
-            name = "Fallback Image",
-            type = MediaSourceType.IMAGE,
-            location = "/storage/emulated/0/Pictures/ravcam.jpg"
-        )
-
-        sourcesBySlot[SourceSlot.STREAM] = RavMediaSource(
-            id = "source_stream",
-            name = "OBS Stream",
-            type = MediaSourceType.RTMP,
-            location = "rtmp://192.168.1.10/live/ravcam"
-        )
+        coroutineScope.launch {
+            repository.sourcesFlow.collect { savedSources ->
+                sourcesBySlot.clear()
+                sourcesBySlot.putAll(savedSources)
+                isLoaded = true
+            }
+        }
     }
 
     fun saveSource(
@@ -56,13 +58,18 @@ class RavCamSourceState {
             location = location.trim(),
             isActive = false
         )
+
+        persistSources()
     }
 
-    fun toggleSource(selectedSource: RavMediaSource) {
+    fun toggleSource(
+        selectedSource: RavMediaSource
+    ) {
         val shouldStop = selectedSource.isActive
 
         SourceSlot.entries.forEach { slot ->
-            val source = sourcesBySlot[slot] ?: return@forEach
+            val source =
+                sourcesBySlot[slot] ?: return@forEach
 
             sourcesBySlot[slot] = source.copy(
                 isActive = if (shouldStop) {
@@ -72,18 +79,48 @@ class RavCamSourceState {
                 }
             )
         }
+
+        persistSources()
     }
 
-    fun deleteSource(selectedSource: RavMediaSource) {
+    fun deleteSource(
+        selectedSource: RavMediaSource
+    ) {
         sourcesBySlot.remove(
             selectedSource.type.toSourceSlot()
         )
+
+        persistSources()
+    }
+
+    private fun persistSources() {
+        val snapshot = sourcesBySlot.toMap()
+
+        coroutineScope.launch {
+            repository.saveSources(snapshot)
+        }
     }
 }
 
 @Composable
 fun rememberRavCamSourceState(): RavCamSourceState {
-    return remember {
-        RavCamSourceState()
+    val context =
+        LocalContext.current.applicationContext
+
+    val coroutineScope =
+        rememberCoroutineScope()
+
+    val repository = remember(context) {
+        SourcePreferencesRepository(context)
+    }
+
+    return remember(
+        repository,
+        coroutineScope
+    ) {
+        RavCamSourceState(
+            repository = repository,
+            coroutineScope = coroutineScope
+        )
     }
 }
