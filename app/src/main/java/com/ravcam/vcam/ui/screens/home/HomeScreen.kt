@@ -53,48 +53,28 @@ import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
+import android.os.Build
+import com.ravcam.vcam.domain.models.RavMediaSource
+import com.ravcam.vcam.domain.models.RavOutputProfile
+import com.ravcam.vcam.ui.state.RavPreviewSessionState
+import com.ravcam.vcam.ui.state.supportsInAppPreview
 
 @Composable
 fun RavCamDashboard(
+    activeSource: RavMediaSource?,
+    outputProfile: RavOutputProfile,
+    previewSessionState: RavPreviewSessionState,
+    onOpenSources: () -> Unit,
+    onOpenPreview: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-//            .background(
-//                Brush.radialGradient(
-//                    colors = listOf(
-//                        Color(0xFF0B2440),
-//                        RavBackground,
-//                        RavBackgroundDeep
-//                    ),
-//                    radius = 1300f
-//                )
-//            )
             .background(RavBackgroundDeep)
     ) {
-//        GlowOrb(
-//            color = RavCyan,
-//            size = 260,
-//            x = (-80),
-//            y = 40
-//        )
-//
-//        GlowOrb(
-//            color = RavMagenta,
-//            size = 220,
-//            x = 250,
-//            y = 130
-//        )
-//
-//        GlowOrb(
-//            color = RavBlue,
-//            size = 260,
-//            x = 120,
-//            y = 520
-//        )
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -106,29 +86,69 @@ fun RavCamDashboard(
                     top = 18.dp,
                     bottom = 140.dp
                 ),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            verticalArrangement =
+                Arrangement.spacedBy(18.dp)
         ) {
-            HeaderSection()
+            HeaderSection(
+                activeSource = activeSource,
+                isPreviewRunning =
+                    previewSessionState.isRunning
+            )
 
-            VCamStatusCard()
+            VCamStatusCard(
+                activeSource = activeSource,
+                outputProfile = outputProfile,
+                isPreviewRunning =
+                    previewSessionState.isRunning
+            )
 
-            PrimaryActions()
+            PrimaryActions(
+                activeSource = activeSource,
+                previewSessionState =
+                    previewSessionState,
+                onOpenSources = onOpenSources,
+                onOpenPreview = onOpenPreview,
+                onOpenSettings = onOpenSettings
+            )
 
-            QuickStatusGrid()
+            QuickStatusGrid(
+                activeSource = activeSource,
+                outputProfile = outputProfile
+            )
 
-            SystemSignalCard()
-
-            //BottomNavMock()
+            SystemSignalCard(
+                activeSource = activeSource,
+                isPreviewRunning =
+                    previewSessionState.isRunning,
+                onOpenDiagnostics =
+                    onOpenDiagnostics
+            )
         }
     }
 }
 
 @Composable
-private fun HeaderSection() {
+private fun HeaderSection(
+    activeSource: RavMediaSource?,
+    isPreviewRunning: Boolean
+) {
+    val statusText = when {
+        isPreviewRunning -> "RUNNING"
+        activeSource != null -> "READY"
+        else -> "IDLE"
+    }
+
+    val statusColor = when {
+        isPreviewRunning -> RavGreen
+        activeSource != null -> RavCyan
+        else -> RavAmber
+    }
+
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement =
+                Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top
         ) {
             Column {
@@ -141,7 +161,7 @@ private fun HeaderSection() {
                 )
 
                 Text(
-                    text = "VCAM CONTROL CORE",
+                    text = "MEDIA CONTROL CORE",
                     color = RavCyanSoft,
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
@@ -150,15 +170,18 @@ private fun HeaderSection() {
             }
 
             StatusPill(
-                text = "IDLE",
-                color = RavAmber
+                text = statusText,
+                color = statusColor
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(
+            modifier = Modifier.height(12.dp)
+        )
 
         Text(
-            text = "Virtual source routing, preview control, and profile management.",
+            text =
+                "Source routing, media preview, transformation, and output profile management.",
             color = RavTextSecondary,
             fontSize = 13.sp,
             lineHeight = 19.sp
@@ -167,16 +190,51 @@ private fun HeaderSection() {
 }
 
 @Composable
-private fun VCamStatusCard() {
+private fun VCamStatusCard(
+    activeSource: RavMediaSource?,
+    outputProfile: RavOutputProfile,
+    isPreviewRunning: Boolean
+) {
+    val statusTitle = when {
+        isPreviewRunning ->
+            "Preview Active"
+
+        activeSource != null ->
+            "Source Ready"
+
+        else ->
+            "No Active Source"
+    }
+
+    val statusSubtitle = when {
+        isPreviewRunning ->
+            "In-app media renderer running"
+
+        activeSource != null ->
+            "Ready to initialize preview"
+
+        else ->
+            "Configure and activate a source"
+    }
+
+    val progress = when {
+        isPreviewRunning -> 1f
+        activeSource != null -> 0.68f
+        else -> 0.16f
+    }
+
     GlassCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement =
+                Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top
         ) {
-            Column {
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
-                    text = "VCAM STATUS",
+                    text = "SYSTEM STATUS",
                     color = RavCyan,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
@@ -184,17 +242,19 @@ private fun VCamStatusCard() {
                     letterSpacing = 1.5.sp
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(
+                    modifier = Modifier.height(12.dp)
+                )
 
                 Text(
-                    text = "Not Active",
+                    text = statusTitle,
                     color = RavTextPrimary,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
-                    text = "Preview Only Mode",
+                    text = statusSubtitle,
                     color = RavTextSecondary,
                     fontSize = 13.sp
                 )
@@ -216,43 +276,98 @@ private fun VCamStatusCard() {
                     .border(
                         width = 1.dp,
                         brush = Brush.linearGradient(
-                            listOf(RavCyan, RavMagenta)
+                            listOf(
+                                RavCyan,
+                                RavMagenta
+                            )
                         ),
                         shape = CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "R",
+                    text = if (isPreviewRunning) {
+                        "▶"
+                    } else {
+                        "R"
+                    },
                     color = RavCyan,
-                    fontSize = 34.sp,
+                    fontSize = 30.sp,
                     fontWeight = FontWeight.Black
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
 
-        HudDataRow(label = "Selected Source", value = "None")
-        HudDataRow(label = "Active Profile", value = "Default 720p")
-        HudDataRow(label = "Output Layer", value = "Standby")
+        HudDataRow(
+            label = "Selected Source",
+            value = activeSource?.name ?: "None"
+        )
 
-        Spacer(modifier = Modifier.height(18.dp))
+        HudDataRow(
+            label = "Source Type",
+            value =
+                activeSource?.type?.shortCode
+                    ?: "None"
+        )
+
+        HudDataRow(
+            label = "Active Profile",
+            value =
+                "${outputProfile.resolution.shortLabel} • " +
+                        outputProfile.frameRate.label
+        )
+
+        HudDataRow(
+            label = "Output Layer",
+            value = if (isPreviewRunning) {
+                "Preview Renderer"
+            } else {
+                "Standby"
+            }
+        )
+
+        Spacer(
+            modifier = Modifier.height(18.dp)
+        )
 
         LinearProgressIndicator(
-            progress = { 0.38f },
+            progress = {
+                progress
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(6.dp)
-                .clip(RoundedCornerShape(999.dp)),
-            color = RavCyan,
-            trackColor = RavCyan.copy(alpha = 0.12f)
+                .clip(
+                    RoundedCornerShape(999.dp)
+                ),
+            color = if (isPreviewRunning) {
+                RavGreen
+            } else {
+                RavCyan
+            },
+            trackColor =
+                RavCyan.copy(alpha = 0.12f)
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(
+            modifier = Modifier.height(8.dp)
+        )
 
         Text(
-            text = "Core systems initialized • awaiting source selection",
+            text = when {
+                isPreviewRunning ->
+                    "Media renderer active"
+
+                activeSource != null ->
+                    "Source and profile prepared"
+
+                else ->
+                    "Awaiting source selection"
+            },
             color = RavTextMuted,
             fontSize = 11.sp,
             fontFamily = FontFamily.Monospace
@@ -261,63 +376,119 @@ private fun VCamStatusCard() {
 }
 
 @Composable
-private fun PrimaryActions() {
+private fun PrimaryActions(
+    activeSource: RavMediaSource?,
+    previewSessionState: RavPreviewSessionState,
+    onOpenSources: () -> Unit,
+    onOpenPreview: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    val mainButtonText = when {
+        activeSource == null ->
+            "SELECT A SOURCE"
+
+        activeSource.type.supportsInAppPreview() ->
+            "START PREVIEW"
+
+        else ->
+            "OPEN OBS PREVIEW INFO"
+    }
+
     Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement =
+            Arrangement.spacedBy(12.dp)
     ) {
         HudButton(
-            text = "START PREVIEW",
-            accent = RavCyan
+            text = mainButtonText,
+            accent = RavCyan,
+            onClick = {
+                when {
+                    activeSource == null -> {
+                        onOpenSources()
+                    }
+
+                    activeSource.type
+                        .supportsInAppPreview() -> {
+                        previewSessionState.start(
+                            source = activeSource
+                        )
+
+                        onOpenPreview()
+                    }
+
+                    else -> {
+                        onOpenPreview()
+                    }
+                }
+            }
         )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement =
+                Arrangement.spacedBy(12.dp)
         ) {
             HudButton(
                 text = "SELECT SOURCE",
                 accent = RavMagenta,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onOpenSources
             )
 
             HudButton(
                 text = "SETTINGS",
                 accent = RavBlue,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                onClick = onOpenSettings
             )
         }
     }
 }
 
 @Composable
-private fun QuickStatusGrid() {
+private fun QuickStatusGrid(
+    activeSource: RavMediaSource?,
+    outputProfile: RavOutputProfile
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement =
+            Arrangement.spacedBy(12.dp)
     ) {
         MiniStatusCard(
             label = "ANDROID",
-            value = "10+",
+            value = Build.VERSION.RELEASE
+                ?: "SDK ${Build.VERSION.SDK_INT}",
             color = RavCyan,
             modifier = Modifier.weight(1f)
         )
 
         MiniStatusCard(
-            label = "ROOT",
-            value = "CHECK",
-            color = RavMagenta,
+            label = "SOURCE",
+            value =
+                activeSource?.type?.shortCode
+                    ?: "NONE",
+            color = if (activeSource != null) {
+                RavGreen
+            } else {
+                RavAmber
+            },
             modifier = Modifier.weight(1f)
         )
     }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+        horizontalArrangement =
+            Arrangement.spacedBy(12.dp)
     ) {
         MiniStatusCard(
-            label = "LSPOSED",
-            value = "PENDING",
-            color = RavAmber,
+            label = "PROFILE",
+            value =
+                outputProfile.resolution
+                    .shortLabel
+                    .replace(" × ", "x"),
+            color = RavBlue,
             modifier = Modifier.weight(1f)
         )
 
@@ -331,7 +502,11 @@ private fun QuickStatusGrid() {
 }
 
 @Composable
-private fun SystemSignalCard() {
+private fun SystemSignalCard(
+    activeSource: RavMediaSource?,
+    isPreviewRunning: Boolean,
+    onOpenDiagnostics: () -> Unit
+) {
     GlassCard {
         Text(
             text = "SYSTEM SIGNAL",
@@ -342,12 +517,47 @@ private fun SystemSignalCard() {
             letterSpacing = 1.5.sp
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(
+            modifier = Modifier.height(14.dp)
+        )
 
-        HudDataRow(label = "Media Engine", value = "Offline")
-        HudDataRow(label = "Frame Queue", value = "0 frames")
-        HudDataRow(label = "Renderer", value = "Standing by")
-        HudDataRow(label = "Diagnostics", value = "Ready")
+        HudDataRow(
+            label = "Media Engine",
+            value = when {
+                isPreviewRunning -> "Running"
+                activeSource != null -> "Ready"
+                else -> "Standby"
+            }
+        )
+
+        HudDataRow(
+            label = "Preview Session",
+            value = if (isPreviewRunning) {
+                "Active"
+            } else {
+                "Stopped"
+            }
+        )
+
+        HudDataRow(
+            label = "Output Adapter",
+            value = "Preview Only"
+        )
+
+        HudDataRow(
+            label = "External Output",
+            value = "Not Attached"
+        )
+
+        Spacer(
+            modifier = Modifier.height(16.dp)
+        )
+
+        HudButton(
+            text = "OPEN DIAGNOSTICS",
+            accent = RavGreen,
+            onClick = onOpenDiagnostics
+        )
     }
 }
 
@@ -423,10 +633,13 @@ private fun GlassCard(
 private fun HudButton(
     text: String,
     accent: Color,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onClick: () -> Unit
 ) {
     Button(
-        onClick = {},
+        onClick = onClick,
+        enabled = enabled,
         modifier = modifier
             .fillMaxWidth()
             .height(56.dp),
@@ -442,7 +655,9 @@ private fun HudButton(
         ),
         colors = ButtonDefaults.buttonColors(
             containerColor = accent.copy(alpha = 0.13f),
-            contentColor = RavTextPrimary
+            contentColor = RavTextPrimary,
+            disabledContainerColor = RavSurface.copy(alpha = 0.3f),
+            disabledContentColor = RavTextMuted
         ),
         contentPadding = PaddingValues(horizontal = 16.dp)
     ) {

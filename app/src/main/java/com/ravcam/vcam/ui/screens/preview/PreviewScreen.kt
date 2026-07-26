@@ -50,35 +50,39 @@ import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
 import com.ravcam.vcam.domain.models.MediaSourceType
 import com.ravcam.vcam.domain.models.RavOutputProfile
+import androidx.compose.runtime.DisposableEffect
+import com.ravcam.vcam.ui.state.RavPreviewSessionState
+import com.ravcam.vcam.ui.state.supportsInAppPreview
 
 
-private fun MediaSourceType.supportsInAppPreview(): Boolean {
-    return this == MediaSourceType.MP4 ||
-            this == MediaSourceType.IMAGE ||
-            this == MediaSourceType.GIF ||
-            this == MediaSourceType.RTSP ||
-            this == MediaSourceType.HTTP
-}
 
 @Composable
 fun PreviewScreen(
     activeSource: RavMediaSource?,
     outputProfile: RavOutputProfile,
+    previewSessionState: RavPreviewSessionState,
     modifier: Modifier = Modifier
 ) {
     val canPreview =
         activeSource?.type?.supportsInAppPreview() == true
 
-    var isPreviewRunning by rememberSaveable {
-        mutableStateOf(false)
-    }
+    val isPreviewRunning = previewSessionState.isRunning
 
     LaunchedEffect(
         activeSource?.id,
         activeSource?.type,
-        activeSource?.location
+        activeSource?.location,
+        activeSource?.isActive
     ) {
-        isPreviewRunning = false
+        previewSessionState.synchronize(
+            activeSource = activeSource
+        )
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            previewSessionState.stop()
+        }
     }
 
     Box(
@@ -114,8 +118,16 @@ fun PreviewScreen(
                 activeSource = activeSource,
                 isPreviewRunning = isPreviewRunning,
                 onTogglePreview = {
-                    if (canPreview) {
-                        isPreviewRunning = !isPreviewRunning
+                    when {
+                        previewSessionState.isRunning -> {
+                            previewSessionState.stop()
+                        }
+
+                        canPreview && activeSource != null -> {
+                            previewSessionState.start(
+                                source = activeSource
+                            )
+                        }
                     }
                 }
             )

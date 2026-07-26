@@ -36,17 +36,36 @@ import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.state.rememberRavCamSourceState
 import com.ravcam.vcam.ui.state.rememberRavOutputProfileState
+import com.ravcam.vcam.ui.state.rememberRavPreviewSessionState
 
 @Composable
 fun RavCamApp() {
     val navController = rememberNavController()
     val sourceState = rememberRavCamSourceState()
     val outputProfileState = rememberRavOutputProfileState()
+    val previewSessionState = rememberRavPreviewSessionState()
 
     val currentDestination = navController
         .currentBackStackEntryAsState()
         .value
         ?.destination
+
+    fun navigateTo(
+        destination: RavCamDestination
+    ) {
+        navController.navigate(
+            destination.route
+        ) {
+            popUpTo(
+                RavCamDestination.Home.route
+            ) {
+                saveState = true
+            }
+
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -60,6 +79,32 @@ fun RavCamApp() {
         ) {
             composable(RavCamDestination.Home.route) {
                 RavCamDashboard(
+                    activeSource =
+                        sourceState.activeSource,
+                    outputProfile =
+                        outputProfileState.profile,
+                    previewSessionState =
+                        previewSessionState,
+                    onOpenSources = {
+                        navigateTo(
+                            RavCamDestination.Sources
+                        )
+                    },
+                    onOpenPreview = {
+                        navigateTo(
+                            RavCamDestination.Preview
+                        )
+                    },
+                    onOpenSettings = {
+                        navigateTo(
+                            RavCamDestination.Settings
+                        )
+                    },
+                    onOpenDiagnostics = {
+                        navigateTo(
+                            RavCamDestination.Diagnostics
+                        )
+                    },
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -73,8 +118,12 @@ fun RavCamApp() {
 
             composable(RavCamDestination.Preview.route) {
                 PreviewScreen(
-                    activeSource = sourceState.activeSource,
-                    outputProfile = outputProfileState.profile,
+                    activeSource =
+                        sourceState.activeSource,
+                    outputProfile =
+                        outputProfileState.profile,
+                    previewSessionState =
+                        previewSessionState,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -102,14 +151,15 @@ fun RavCamApp() {
         RavBottomNavigationBar(
             currentRoute = currentDestination,
             onDestinationSelected = { destination ->
-                navController.navigate(destination.route) {
-                    popUpTo(RavCamDestination.Home.route) {
-                        saveState = true
-                    }
-
-                    launchSingleTop = true
-                    restoreState = true
-                }
+                  navigateTo(destination)
+//                navController.navigate(destination.route) {
+//                    popUpTo(RavCamDestination.Home.route) {
+//                        saveState = true
+//                    }
+//
+//                    launchSingleTop = true
+//                    restoreState = true
+//                }
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
