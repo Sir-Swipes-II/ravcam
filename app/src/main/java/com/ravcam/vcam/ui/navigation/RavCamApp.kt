@@ -137,6 +137,18 @@ fun RavCamApp() {
 
             composable(RavCamDestination.Diagnostics.route) {
                 DiagnosticsScreen(
+                    sourcesBySlot =
+                        sourceState.sourcesBySlot.toMap(),
+                    activeSource =
+                        sourceState.activeSource,
+                    sourceStateLoaded =
+                        sourceState.isLoaded,
+                    outputProfile =
+                        outputProfileState.profile,
+                    outputProfileLoaded =
+                        outputProfileState.isLoaded,
+                    isPreviewRunning =
+                        previewSessionState.isRunning,
                     modifier = Modifier.fillMaxSize()
                 )
             }
