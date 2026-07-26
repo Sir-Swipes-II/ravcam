@@ -49,6 +49,7 @@ import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
 import com.ravcam.vcam.domain.models.MediaSourceType
+import com.ravcam.vcam.domain.models.RavOutputProfile
 
 
 private fun MediaSourceType.supportsInAppPreview(): Boolean {
@@ -62,6 +63,7 @@ private fun MediaSourceType.supportsInAppPreview(): Boolean {
 @Composable
 fun PreviewScreen(
     activeSource: RavMediaSource?,
+    outputProfile: RavOutputProfile,
     modifier: Modifier = Modifier
 ) {
     val canPreview =
@@ -119,6 +121,7 @@ fun PreviewScreen(
 
             PreviewDiagnosticsCard(
                 activeSource = activeSource,
+                outputProfile = outputProfile,
                 isPreviewRunning = isPreviewRunning
             )
         }
@@ -402,6 +405,7 @@ private fun PreviewControlCard(
 @Composable
 private fun PreviewDiagnosticsCard(
     activeSource: RavMediaSource?,
+    outputProfile: RavOutputProfile,
     isPreviewRunning: Boolean
 ) {
     PreviewGlassPanel {
@@ -419,6 +423,35 @@ private fun PreviewDiagnosticsCard(
         PreviewDataRow(
             label = "Source Type",
             value = activeSource?.type?.shortCode ?: "None"
+        )
+
+        PreviewDataRow(
+            label = "Target",
+            value = outputProfile.resolution.shortLabel
+        )
+
+        PreviewDataRow(
+            label = "Frame Rate",
+            value = outputProfile.frameRate.label
+        )
+
+        PreviewDataRow(
+            label = "Fit Mode",
+            value = outputProfile.fitMode.label
+        )
+
+        PreviewDataRow(
+            label = "Rotation",
+            value = outputProfile.rotation.label
+        )
+
+        PreviewDataRow(
+            label = "Mirror",
+            value = if (outputProfile.mirrorHorizontal) {
+                "Enabled"
+            } else {
+                "Disabled"
+            }
         )
 
         PreviewDataRow(

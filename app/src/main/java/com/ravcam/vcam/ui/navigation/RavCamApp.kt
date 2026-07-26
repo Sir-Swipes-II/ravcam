@@ -35,11 +35,13 @@ import com.ravcam.vcam.ui.theme.RavCyan
 import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.state.rememberRavCamSourceState
+import com.ravcam.vcam.ui.state.rememberRavOutputProfileState
 
 @Composable
 fun RavCamApp() {
     val navController = rememberNavController()
     val sourceState = rememberRavCamSourceState()
+    val outputProfileState = rememberRavOutputProfileState()
 
     val currentDestination = navController
         .currentBackStackEntryAsState()
@@ -72,12 +74,14 @@ fun RavCamApp() {
             composable(RavCamDestination.Preview.route) {
                 PreviewScreen(
                     activeSource = sourceState.activeSource,
+                    outputProfile = outputProfileState.profile,
                     modifier = Modifier.fillMaxSize()
                 )
             }
 
             composable(RavCamDestination.Settings.route) {
                 SettingsScreen(
+                    outputProfileState = outputProfileState,
                     modifier = Modifier.fillMaxSize()
                 )
             }
