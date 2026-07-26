@@ -15,6 +15,20 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.RavCam">
+
+        <meta-data
+            android:name="xposedmodule"
+            android:value="true" />
+        <meta-data
+            android:name="xposeddescription"
+            android:value="RavCam VCam Module" />
+        <meta-data
+            android:name="xposedminversion"
+            android:value="100" />
+        <meta-data
+            android:name="xposedsharedlibrary"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
