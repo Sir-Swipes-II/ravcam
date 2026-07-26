@@ -106,6 +106,7 @@ fun PreviewScreen(
 
             PreviewViewport(
                 activeSource = activeSource,
+                outputProfile = outputProfile,
                 isPreviewRunning = isPreviewRunning
             )
 
@@ -209,12 +210,17 @@ private fun PreviewHeader(
 @Composable
 private fun PreviewViewport(
     activeSource: RavMediaSource?,
+    outputProfile: RavOutputProfile,
     isPreviewRunning: Boolean
 ) {
+    val targetAspectRatio =
+        outputProfile.width.toFloat() /
+                outputProfile.height.toFloat()
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f)
+            .aspectRatio(targetAspectRatio)
             .clip(RoundedCornerShape(28.dp))
             .background(RavBackgroundDeep)
             .border(
@@ -257,6 +263,7 @@ private fun PreviewViewport(
             else -> {
                 PreviewMediaRenderer(
                     source = activeSource,
+                    outputProfile = outputProfile,
                     modifier = Modifier.fillMaxSize()
                 )
             }

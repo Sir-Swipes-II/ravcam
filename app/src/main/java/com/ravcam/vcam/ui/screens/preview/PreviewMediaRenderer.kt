@@ -28,6 +28,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import android.view.LayoutInflater
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import com.ravcam.vcam.R
+import com.ravcam.vcam.domain.models.OutputFitMode
+import com.ravcam.vcam.domain.models.RavOutputProfile
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -55,6 +63,7 @@ private enum class RendererLoadState {
 @Composable
 internal fun PreviewMediaRenderer(
     source: RavMediaSource,
+    outputProfile: RavOutputProfile,
     modifier: Modifier = Modifier
 ) {
     when (source.type) {
@@ -63,6 +72,7 @@ internal fun PreviewMediaRenderer(
         MediaSourceType.HTTP -> {
             ExoPlayerPreviewRenderer(
                 source = source,
+                outputProfile = outputProfile,
                 modifier = modifier
             )
         }
@@ -71,6 +81,7 @@ internal fun PreviewMediaRenderer(
         MediaSourceType.GIF -> {
             ImagePreviewRenderer(
                 source = source,
+                outputProfile = outputProfile,
                 modifier = modifier
             )
         }
@@ -78,7 +89,8 @@ internal fun PreviewMediaRenderer(
         MediaSourceType.RTMP -> {
             RendererMessage(
                 title = "OBS PREVIEW",
-                message = "RTMP preview is handled externally in OBS.",
+                message =
+                    "RTMP preview is handled externally in OBS.",
                 color = RavBlue,
                 modifier = modifier
             )
@@ -89,6 +101,7 @@ internal fun PreviewMediaRenderer(
 @Composable
 private fun ExoPlayerPreviewRenderer(
     source: RavMediaSource,
+    outputProfile: RavOutputProfile,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -121,25 +134,39 @@ private fun ExoPlayerPreviewRenderer(
         mutableStateOf<String?>(null)
     }
 
-    val player = remember(
+    val exoPlayer = remember(
         source.id,
         source.type,
         source.location
     ) {
-        ExoPlayer.Builder(context).build().apply {
-            repeatMode = if (source.type == MediaSourceType.MP4) {
+        ExoPlayer.Builder(context).build()
+    }
+
+    /*
+     * Update playback preferences without recreating
+     * the player or restarting the active media.
+     */
+    SideEffect {
+        exoPlayer.repeatMode =
+            if (
+                outputProfile.loopMedia &&
+                source.type == MediaSourceType.MP4
+            ) {
                 Player.REPEAT_MODE_ONE
             } else {
                 Player.REPEAT_MODE_OFF
             }
 
-            // Preview is muted to prevent monitor feedback.
-            volume = 0f
-        }
+        exoPlayer.volume =
+            if (outputProfile.previewAudio) {
+                1f
+            } else {
+                0f
+            }
     }
 
     DisposableEffect(
-        player,
+        exoPlayer,
         mediaItem
     ) {
         val listener = object : Player.Listener {
@@ -165,23 +192,26 @@ private fun ExoPlayerPreviewRenderer(
             ) {
                 rendererState = RendererLoadState.ERROR
 
-                errorMessage = error.localizedMessage
-                    ?: defaultPlaybackError(source.type)
+                errorMessage =
+                    error.localizedMessage
+                        ?: defaultPlaybackError(
+                            source.type
+                        )
             }
         }
 
-        player.addListener(listener)
+        exoPlayer.addListener(listener)
 
         rendererState = RendererLoadState.LOADING
         errorMessage = null
 
-        player.setMediaItem(mediaItem)
-        player.prepare()
-        player.playWhenReady = true
+        exoPlayer.setMediaItem(mediaItem)
+        exoPlayer.prepare()
+        exoPlayer.playWhenReady = true
 
         onDispose {
-            player.removeListener(listener)
-            player.release()
+            exoPlayer.removeListener(listener)
+            exoPlayer.release()
         }
     }
 
@@ -190,23 +220,43 @@ private fun ExoPlayerPreviewRenderer(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        AndroidView(
-            factory = { viewContext ->
-                PlayerView(viewContext).apply {
-                    useController = false
-                    keepScreenOn = true
-
-                    resizeMode =
-                        AspectRatioFrameLayout.RESIZE_MODE_FIT
-
-                    this.player = player
-                }
-            },
-            update = { playerView ->
-                playerView.player = player
-            },
+        TransformedMediaContent(
+            outputProfile = outputProfile,
             modifier = Modifier.fillMaxSize()
-        )
+        ) { mediaModifier ->
+            AndroidView(
+                factory = { viewContext ->
+                    val playerView =
+                        LayoutInflater
+                            .from(viewContext)
+                            .inflate(
+                                R.layout
+                                    .rav_preview_player_view,
+                                null,
+                                false
+                            ) as PlayerView
+
+                    playerView.apply {
+                        keepScreenOn = true
+                        resizeMode =
+                            outputProfile
+                                .fitMode
+                                .toPlayerResizeMode()
+
+                        player = exoPlayer
+                    }
+                },
+                update = { playerView ->
+                    playerView.player = exoPlayer
+
+                    playerView.resizeMode =
+                        outputProfile
+                            .fitMode
+                            .toPlayerResizeMode()
+                },
+                modifier = mediaModifier
+            )
+        }
 
         when (rendererState) {
             RendererLoadState.LOADING -> {
@@ -218,8 +268,11 @@ private fun ExoPlayerPreviewRenderer(
             RendererLoadState.ERROR -> {
                 RendererMessage(
                     title = errorTitle(source.type),
-                    message = errorMessage
-                        ?: defaultPlaybackError(source.type),
+                    message =
+                        errorMessage
+                            ?: defaultPlaybackError(
+                                source.type
+                            ),
                     color = RavMagenta,
                     modifier = Modifier.fillMaxSize()
                 )
@@ -233,6 +286,7 @@ private fun ExoPlayerPreviewRenderer(
 @Composable
 private fun ImagePreviewRenderer(
     source: RavMediaSource,
+    outputProfile: RavOutputProfile,
     modifier: Modifier = Modifier
 ) {
     val mediaUri = remember(source.location) {
@@ -243,37 +297,50 @@ private fun ImagePreviewRenderer(
         mutableStateOf(RendererLoadState.LOADING)
     }
 
+    val imageContentScale =
+        outputProfile.fitMode.toImageContentScale()
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        AsyncImage(
-            model = mediaUri,
-            contentDescription = source.name,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize(),
-            onLoading = {
-                rendererState = RendererLoadState.LOADING
-            },
-            onSuccess = {
-                rendererState = RendererLoadState.READY
-            },
-            onError = {
-                rendererState = RendererLoadState.ERROR
-            }
-        )
+        TransformedMediaContent(
+            outputProfile = outputProfile,
+            modifier = Modifier.fillMaxSize()
+        ) { mediaModifier ->
+            AsyncImage(
+                model = mediaUri,
+                contentDescription = source.name,
+                contentScale = imageContentScale,
+                modifier = mediaModifier,
+                onLoading = {
+                    rendererState =
+                        RendererLoadState.LOADING
+                },
+                onSuccess = {
+                    rendererState =
+                        RendererLoadState.READY
+                },
+                onError = {
+                    rendererState =
+                        RendererLoadState.ERROR
+                }
+            )
+        }
 
         when (rendererState) {
             RendererLoadState.LOADING -> {
                 RendererLoadingOverlay(
-                    title = if (
-                        source.type == MediaSourceType.GIF
-                    ) {
-                        "LOADING GIF"
-                    } else {
-                        "LOADING IMAGE"
-                    }
+                    title =
+                        if (
+                            source.type ==
+                            MediaSourceType.GIF
+                        ) {
+                            "LOADING GIF"
+                        } else {
+                            "LOADING IMAGE"
+                        }
                 )
             }
 
@@ -289,6 +356,103 @@ private fun ImagePreviewRenderer(
 
             RendererLoadState.READY -> Unit
         }
+    }
+}
+
+@Composable
+private fun TransformedMediaContent(
+    outputProfile: RavOutputProfile,
+    modifier: Modifier = Modifier,
+    content: @Composable (Modifier) -> Unit
+) {
+    /*
+     * Mirror is applied to the completed output frame so
+     * it remains a horizontal mirror regardless of rotation.
+     */
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                scaleX =
+                    if (
+                        outputProfile
+                            .mirrorHorizontal
+                    ) {
+                        -1f
+                    } else {
+                        1f
+                    }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            val rotationDegrees =
+                outputProfile.rotation.degrees
+
+            val isQuarterTurn =
+                rotationDegrees == 90 ||
+                        rotationDegrees == 270
+
+            /*
+             * A 90° or 270° rotation swaps the media
+             * container's width and height before rotating.
+             *
+             * This prevents the rotated content from being
+             * incorrectly clipped by the target frame.
+             */
+            val mediaModifier =
+                if (isQuarterTurn) {
+                    Modifier
+                        .width(maxHeight)
+                        .height(maxWidth)
+                        .align(Alignment.Center)
+                        .graphicsLayer {
+                            rotationZ =
+                                rotationDegrees
+                                    .toFloat()
+                        }
+                } else {
+                    Modifier
+                        .fillMaxSize()
+                        .align(Alignment.Center)
+                        .graphicsLayer {
+                            rotationZ =
+                                rotationDegrees
+                                    .toFloat()
+                        }
+                }
+
+            content(mediaModifier)
+        }
+    }
+}
+
+private fun OutputFitMode.toPlayerResizeMode(): Int {
+    return when (this) {
+        OutputFitMode.FIT ->
+            AspectRatioFrameLayout.RESIZE_MODE_FIT
+
+        OutputFitMode.CROP ->
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+
+        OutputFitMode.STRETCH ->
+            AspectRatioFrameLayout.RESIZE_MODE_FILL
+    }
+}
+
+private fun OutputFitMode.toImageContentScale():
+        ContentScale {
+    return when (this) {
+        OutputFitMode.FIT ->
+            ContentScale.Fit
+
+        OutputFitMode.CROP ->
+            ContentScale.Crop
+
+        OutputFitMode.STRETCH ->
+            ContentScale.FillBounds
     }
 }
 
