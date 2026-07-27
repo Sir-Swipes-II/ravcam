@@ -54,7 +54,11 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.gif)
     implementation(libs.androidx.datastore.preferences)
-    compileOnly(libs.libxposed.api)
+    implementation(libs.libxposed.service)
+    compileOnly(
+        "io.github.libxposed:api:" +
+                "100.x.-100-ge2588ee-22@aar"
+    )
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

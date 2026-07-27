@@ -40,6 +40,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -99,6 +100,9 @@ internal fun PreviewMediaRenderer(
 }
 
 @Composable
+@androidx.annotation.OptIn(
+    markerClass = [UnstableApi::class]
+)
 private fun ExoPlayerPreviewRenderer(
     source: RavMediaSource,
     outputProfile: RavOutputProfile,
@@ -429,6 +433,9 @@ private fun TransformedMediaContent(
     }
 }
 
+@androidx.annotation.OptIn(
+    markerClass = [UnstableApi::class]
+)
 private fun OutputFitMode.toPlayerResizeMode(): Int {
     return when (this) {
         OutputFitMode.FIT ->

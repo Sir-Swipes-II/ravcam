@@ -5,7 +5,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <permission
+        android:name="com.ravcam.vcam.permission.ACCESS_FEED"
+        android:protectionLevel="signature" />
+
     <application
+        android:name=".RavCamApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -41,6 +46,23 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Injected consumers run with the scoped app's UID, so the Messenger
+          endpoint validates an LSPosed-published capability instead of applying
+          the signature permission at the component boundary.
+        -->
+        <service
+            android:name=".feed.service.RavFeedService"
+            android:exported="true" />
+
+        <provider
+            android:name=".feed.provider.RavFeedContentProvider"
+            android:authorities="com.ravcam.vcam.feed"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <grant-uri-permission android:pathPrefix="/session/" />
+        </provider>
     </application>
 
 </manifest>

@@ -29,6 +29,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -54,15 +55,18 @@ import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.theme.RavTextPrimary
 import com.ravcam.vcam.ui.theme.RavTextSecondary
 import android.os.Build
+import com.ravcam.vcam.domain.feed.RavFeedState
 import com.ravcam.vcam.domain.models.RavMediaSource
+import com.ravcam.vcam.domain.models.MediaSourceType
 import com.ravcam.vcam.domain.models.RavOutputProfile
+import com.ravcam.vcam.ui.state.RavFeedSessionState
 import com.ravcam.vcam.ui.state.RavPreviewSessionState
-import com.ravcam.vcam.ui.state.supportsInAppPreview
 
 @Composable
 fun RavCamDashboard(
     activeSource: RavMediaSource?,
     outputProfile: RavOutputProfile,
+    feedSessionState: RavFeedSessionState,
     previewSessionState: RavPreviewSessionState,
     onOpenSources: () -> Unit,
     onOpenPreview: () -> Unit,
@@ -70,6 +74,16 @@ fun RavCamDashboard(
     onOpenDiagnostics: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    LaunchedEffect(
+        activeSource,
+        outputProfile
+    ) {
+        feedSessionState.synchronizeConfiguration(
+            activeSource,
+            outputProfile
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -91,21 +105,20 @@ fun RavCamDashboard(
         ) {
             HeaderSection(
                 activeSource = activeSource,
-                isPreviewRunning =
-                    previewSessionState.isRunning
+                feedState = feedSessionState.state
             )
 
             VCamStatusCard(
                 activeSource = activeSource,
                 outputProfile = outputProfile,
-                isPreviewRunning =
-                    previewSessionState.isRunning
+                feedSessionState =
+                    feedSessionState
             )
 
             PrimaryActions(
                 activeSource = activeSource,
-                previewSessionState =
-                    previewSessionState,
+                outputProfile = outputProfile,
+                feedSessionState = feedSessionState,
                 onOpenSources = onOpenSources,
                 onOpenPreview = onOpenPreview,
                 onOpenSettings = onOpenSettings
@@ -120,6 +133,8 @@ fun RavCamDashboard(
                 activeSource = activeSource,
                 isPreviewRunning =
                     previewSessionState.isRunning,
+                feedSessionState =
+                    feedSessionState,
                 onOpenDiagnostics =
                     onOpenDiagnostics
             )
@@ -130,18 +145,22 @@ fun RavCamDashboard(
 @Composable
 private fun HeaderSection(
     activeSource: RavMediaSource?,
-    isPreviewRunning: Boolean
+    feedState: RavFeedState
 ) {
-    val statusText = when {
-        isPreviewRunning -> "RUNNING"
-        activeSource != null -> "READY"
-        else -> "IDLE"
+    val statusText = when (feedState) {
+        RavFeedState.STOPPED ->
+            if (activeSource == null) "IDLE" else "READY"
+        else -> feedState.name
     }
 
-    val statusColor = when {
-        isPreviewRunning -> RavGreen
-        activeSource != null -> RavCyan
-        else -> RavAmber
+    val statusColor = when (feedState) {
+        RavFeedState.RUNNING -> RavGreen
+        RavFeedState.ERROR -> RavRed
+        RavFeedState.PREPARING,
+        RavFeedState.STOPPING -> RavAmber
+        RavFeedState.READY -> RavCyan
+        RavFeedState.STOPPED ->
+            if (activeSource != null) RavCyan else RavAmber
     }
 
     Column {
@@ -193,34 +212,51 @@ private fun HeaderSection(
 private fun VCamStatusCard(
     activeSource: RavMediaSource?,
     outputProfile: RavOutputProfile,
-    isPreviewRunning: Boolean
+    feedSessionState: RavFeedSessionState
 ) {
-    val statusTitle = when {
-        isPreviewRunning ->
-            "Preview Active"
-
-        activeSource != null ->
-            "Source Ready"
-
-        else ->
-            "No Active Source"
+    val snapshot = feedSessionState.snapshot
+    val statusTitle = when (snapshot.state) {
+        RavFeedState.RUNNING -> "Feed Running"
+        RavFeedState.READY -> "Waiting for Consumer"
+        RavFeedState.PREPARING -> "Preparing Feed"
+        RavFeedState.STOPPING -> "Stopping Feed"
+        RavFeedState.ERROR -> "Feed Error"
+        RavFeedState.STOPPED ->
+            if (activeSource != null) {
+                "Source Ready"
+            } else {
+                "No Active Source"
+            }
     }
 
-    val statusSubtitle = when {
-        isPreviewRunning ->
-            "In-app media renderer running"
-
-        activeSource != null ->
-            "Ready to initialize preview"
-
-        else ->
-            "Configure and activate a source"
+    val statusSubtitle = when (snapshot.state) {
+        RavFeedState.RUNNING ->
+            "Authorized consumer receiving the feed contract"
+        RavFeedState.READY ->
+            "Feed prepared; awaiting an injected consumer"
+        RavFeedState.ERROR ->
+            snapshot.lastError?.code?.name
+                ?: "Feed session failed"
+        RavFeedState.PREPARING ->
+            "Resolving source and output profile"
+        RavFeedState.STOPPING ->
+            "Revoking consumer access"
+        RavFeedState.STOPPED ->
+            if (activeSource != null) {
+                "Ready to start external feed"
+            } else {
+                "Configure and activate a source"
+            }
     }
 
-    val progress = when {
-        isPreviewRunning -> 1f
-        activeSource != null -> 0.68f
-        else -> 0.16f
+    val progress = when (snapshot.state) {
+        RavFeedState.RUNNING -> 1f
+        RavFeedState.READY -> 0.82f
+        RavFeedState.PREPARING,
+        RavFeedState.STOPPING -> 0.5f
+        RavFeedState.ERROR -> 0.18f
+        RavFeedState.STOPPED ->
+            if (activeSource != null) 0.32f else 0.1f
     }
 
     GlassCard {
@@ -286,7 +322,10 @@ private fun VCamStatusCard(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (isPreviewRunning) {
+                    text = if (
+                        snapshot.state ==
+                        RavFeedState.RUNNING
+                    ) {
                         "▶"
                     } else {
                         "R"
@@ -322,12 +361,50 @@ private fun VCamStatusCard(
         )
 
         HudDataRow(
-            label = "Output Layer",
-            value = if (isPreviewRunning) {
-                "Preview Renderer"
-            } else {
-                "Standby"
-            }
+            label = "Feed State",
+            value = snapshot.state.name
+        )
+
+        HudDataRow(
+            label = "Adapter State",
+            value = snapshot.adapterStatus.name
+        )
+
+        HudDataRow(
+            label = "Consumer",
+            value = snapshot.heartbeat
+                ?.consumerPackage
+                ?: "Not connected"
+        )
+
+        HudDataRow(
+            label = "Last Heartbeat",
+            value = snapshot.heartbeatAgeMillis
+                ?.let { "${it / 1_000L}s ago" }
+                ?: "None"
+        )
+
+        HudDataRow(
+            label = "Session",
+            value = snapshot.descriptor
+                ?.sessionId
+                ?.take(8)
+                ?: "None"
+        )
+
+        HudDataRow(
+            label = "Revision",
+            value = snapshot.descriptor
+                ?.revision
+                ?.toString()
+                ?: "None"
+        )
+
+        HudDataRow(
+            label = "Restart Required",
+            value = if (
+                snapshot.configurationChanged
+            ) "Yes" else "No"
         )
 
         Spacer(
@@ -344,7 +421,10 @@ private fun VCamStatusCard(
                 .clip(
                     RoundedCornerShape(999.dp)
                 ),
-            color = if (isPreviewRunning) {
+            color = if (
+                snapshot.state ==
+                RavFeedState.RUNNING
+            ) {
                 RavGreen
             } else {
                 RavCyan
@@ -359,11 +439,17 @@ private fun VCamStatusCard(
 
         Text(
             text = when {
-                isPreviewRunning ->
-                    "Media renderer active"
+                snapshot.configurationChanged ->
+                    "Restart feed to apply source or profile changes"
+
+                snapshot.state == RavFeedState.RUNNING ->
+                    "External feed consumer connected"
+
+                snapshot.state == RavFeedState.READY ->
+                    "Feed contract published"
 
                 activeSource != null ->
-                    "Source and profile prepared"
+                    "Source and profile ready"
 
                 else ->
                     "Awaiting source selection"
@@ -378,7 +464,8 @@ private fun VCamStatusCard(
 @Composable
 private fun PrimaryActions(
     activeSource: RavMediaSource?,
-    previewSessionState: RavPreviewSessionState,
+    outputProfile: RavOutputProfile,
+    feedSessionState: RavFeedSessionState,
     onOpenSources: () -> Unit,
     onOpenPreview: () -> Unit,
     onOpenSettings: () -> Unit
@@ -387,11 +474,31 @@ private fun PrimaryActions(
         activeSource == null ->
             "SELECT A SOURCE"
 
-        activeSource.type.supportsInAppPreview() ->
-            "START PREVIEW"
+        activeSource.type == MediaSourceType.RTMP ->
+            "MANAGED IN OBS"
 
-        else ->
-            "OPEN OBS PREVIEW INFO"
+        feedSessionState.requiresRestart ->
+            "RESTART FEED TO APPLY CHANGES"
+
+        feedSessionState.state ==
+                RavFeedState.PREPARING ->
+            "PREPARING FEED..."
+
+        feedSessionState.state ==
+                RavFeedState.STOPPING ->
+            "STOPPING FEED..."
+
+        feedSessionState.state ==
+                RavFeedState.READY ||
+                feedSessionState.state ==
+                RavFeedState.RUNNING ->
+            "STOP FEED"
+
+        feedSessionState.state ==
+                RavFeedState.ERROR ->
+            "RETRY FEED"
+
+        else -> "START FEED"
     }
 
     Column(
@@ -407,20 +514,43 @@ private fun PrimaryActions(
                         onOpenSources()
                     }
 
-                    activeSource.type
-                        .supportsInAppPreview() -> {
-                        previewSessionState.start(
-                            source = activeSource
-                        )
-
+                    activeSource.type ==
+                            MediaSourceType.RTMP -> {
                         onOpenPreview()
                     }
 
-                    else -> {
-                        onOpenPreview()
+                    feedSessionState
+                        .requiresRestart -> {
+                        feedSessionState.restartFeed(
+                            activeSource,
+                            outputProfile
+                        )
+                    }
+
+                    feedSessionState.state ==
+                            RavFeedState.READY ||
+                            feedSessionState.state ==
+                            RavFeedState.RUNNING -> {
+                        feedSessionState.stopFeed()
+                    }
+
+                    feedSessionState.state ==
+                            RavFeedState.ERROR -> {
+                        feedSessionState.restartFeed(
+                            activeSource,
+                            outputProfile
+                        )
+                    }
+
+                    feedSessionState.canStart -> {
+                        feedSessionState.startFeed(
+                            activeSource,
+                            outputProfile
+                        )
                     }
                 }
-            }
+            },
+            enabled = !feedSessionState.isBusy
         )
 
         Row(
@@ -505,6 +635,7 @@ private fun QuickStatusGrid(
 private fun SystemSignalCard(
     activeSource: RavMediaSource?,
     isPreviewRunning: Boolean,
+    feedSessionState: RavFeedSessionState,
     onOpenDiagnostics: () -> Unit
 ) {
     GlassCard {
@@ -541,12 +672,21 @@ private fun SystemSignalCard(
 
         HudDataRow(
             label = "Output Adapter",
-            value = "Preview Only"
+            value = feedSessionState.adapterStatus.name
         )
 
         HudDataRow(
             label = "External Output",
-            value = "Not Attached"
+            value = when (
+                feedSessionState.state
+            ) {
+                RavFeedState.RUNNING ->
+                    "Consumer Connected"
+                RavFeedState.READY ->
+                    "Waiting"
+                else ->
+                    feedSessionState.state.name
+            }
         )
 
         Spacer(

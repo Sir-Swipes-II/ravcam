@@ -19,6 +19,14 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://jitpack.io") {
+            content {
+                includeGroup("io.github.libxposed")
+            }
+            metadataSources {
+                artifact()
+            }
+        }
     }
 }
 

@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ravcam.vcam.domain.models.DiagnosticStatus
+import com.ravcam.vcam.domain.feed.RavFeedSnapshot
 import com.ravcam.vcam.domain.models.RavDiagnosticItem
 import com.ravcam.vcam.domain.models.RavDiagnosticsReport
 import com.ravcam.vcam.domain.models.RavMediaSource
@@ -70,6 +71,7 @@ fun DiagnosticsScreen(
     outputProfile: RavOutputProfile,
     outputProfileLoaded: Boolean,
     isPreviewRunning: Boolean,
+    feedSnapshot: RavFeedSnapshot,
     modifier: Modifier = Modifier
 ) {
     val context =
@@ -105,6 +107,8 @@ fun DiagnosticsScreen(
 
         val profileSnapshot =
             outputProfile
+        val feedSnapshotAtRun =
+            feedSnapshot
 
         coroutineScope.launch {
             isRunning = true
@@ -123,7 +127,9 @@ fun DiagnosticsScreen(
                     outputProfileLoaded =
                         outputProfileLoaded,
                     isPreviewRunning =
-                        isPreviewRunning
+                        isPreviewRunning,
+                    feedSnapshot =
+                        feedSnapshotAtRun
                 )
             }.getOrElse { error ->
                 RavDiagnosticsReport(

@@ -35,6 +35,7 @@ import com.ravcam.vcam.ui.theme.RavCyan
 import com.ravcam.vcam.ui.theme.RavSurface
 import com.ravcam.vcam.ui.theme.RavTextMuted
 import com.ravcam.vcam.ui.state.rememberRavCamSourceState
+import com.ravcam.vcam.ui.state.rememberRavFeedSessionState
 import com.ravcam.vcam.ui.state.rememberRavOutputProfileState
 import com.ravcam.vcam.ui.state.rememberRavPreviewSessionState
 
@@ -44,6 +45,7 @@ fun RavCamApp() {
     val sourceState = rememberRavCamSourceState()
     val outputProfileState = rememberRavOutputProfileState()
     val previewSessionState = rememberRavPreviewSessionState()
+    val feedSessionState = rememberRavFeedSessionState()
 
     val currentDestination = navController
         .currentBackStackEntryAsState()
@@ -83,6 +85,8 @@ fun RavCamApp() {
                         sourceState.activeSource,
                     outputProfile =
                         outputProfileState.profile,
+                    feedSessionState =
+                        feedSessionState,
                     previewSessionState =
                         previewSessionState,
                     onOpenSources = {
@@ -149,6 +153,8 @@ fun RavCamApp() {
                         outputProfileState.isLoaded,
                     isPreviewRunning =
                         previewSessionState.isRunning,
+                    feedSnapshot =
+                        feedSessionState.snapshot,
                     modifier = Modifier.fillMaxSize()
                 )
             }

@@ -1,12 +1,19 @@
 package com.ravcam.vcam.ui.screens.diagnostics
 
 import android.content.ContentResolver
+import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.StatFs
+import com.ravcam.vcam.RavCamApplication
+import com.ravcam.vcam.domain.feed.RavFeedAdapterStatus
+import com.ravcam.vcam.domain.feed.RavFeedSnapshot
+import com.ravcam.vcam.domain.feed.RavFeedState
+import com.ravcam.vcam.domain.feed.RavFeedTransport
 import com.ravcam.vcam.domain.models.DiagnosticStatus
 import com.ravcam.vcam.domain.models.MediaSourceType
 import com.ravcam.vcam.domain.models.RavDiagnosticItem
@@ -15,6 +22,8 @@ import com.ravcam.vcam.domain.models.RavMediaSource
 import com.ravcam.vcam.domain.models.RavOutputProfile
 import com.ravcam.vcam.domain.models.SourceSlot
 import com.ravcam.vcam.domain.models.toSourceSlot
+import com.ravcam.vcam.feed.provider.RavFeedContentProvider
+import com.ravcam.vcam.feed.service.RavFeedService
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +38,8 @@ object RavDiagnosticsEngine {
         sourceStateLoaded: Boolean,
         outputProfile: RavOutputProfile,
         outputProfileLoaded: Boolean,
-        isPreviewRunning: Boolean
+        isPreviewRunning: Boolean,
+        feedSnapshot: RavFeedSnapshot
     ): RavDiagnosticsReport = withContext(
         Dispatchers.IO
     ) {
@@ -108,7 +118,39 @@ object RavDiagnosticsEngine {
             )
 
             add(
-                buildOutputAdapterCheck()
+                buildFeedSessionCheck(feedSnapshot)
+            )
+
+            add(
+                buildFeedAdapterCheck(feedSnapshot)
+            )
+
+            add(
+                buildFeedDescriptorCheck(feedSnapshot)
+            )
+
+            add(
+                buildFeedSourceAccessCheck(
+                    context,
+                    feedSnapshot
+                )
+            )
+
+            add(
+                buildFeedHeartbeatCheck(feedSnapshot)
+            )
+
+            add(
+                buildFeedSecurityCheck(
+                    context,
+                    feedSnapshot
+                )
+            )
+
+            add(
+                buildFeedConfigurationCheck(
+                    feedSnapshot
+                )
             )
         }
 
@@ -613,14 +655,310 @@ object RavDiagnosticsEngine {
         }
     }
 
-    private fun buildOutputAdapterCheck():
-            RavDiagnosticItem {
+    private fun buildFeedSessionCheck(
+        snapshot: RavFeedSnapshot
+    ): RavDiagnosticItem {
+        val status = when (snapshot.state) {
+            RavFeedState.RUNNING ->
+                DiagnosticStatus.PASS
+
+            RavFeedState.ERROR ->
+                DiagnosticStatus.ERROR
+
+            RavFeedState.READY ->
+                DiagnosticStatus.WARNING
+
+            else -> DiagnosticStatus.INFO
+        }
+
         return RavDiagnosticItem(
-            id = "output_adapter",
-            title = "External Output Adapter",
+            id = "feed_session",
+            title = "Feed Session",
             detail =
-                "No external output adapter is attached. RavCam is operating in preview-only mode.",
-            status = DiagnosticStatus.INFO
+                "State ${snapshot.state.name} • " +
+                        (
+                            snapshot.descriptor
+                                ?.sessionId
+                                ?.take(8)
+                                ?.let { "Session $it" }
+                                ?: "No active session"
+                            ),
+            status = status
+        )
+    }
+
+    private fun buildFeedAdapterCheck(
+        snapshot: RavFeedSnapshot
+    ): RavDiagnosticItem {
+        val status = when (
+            snapshot.adapterStatus
+        ) {
+            RavFeedAdapterStatus.CONNECTED ->
+                DiagnosticStatus.PASS
+
+            RavFeedAdapterStatus.STALE ->
+                DiagnosticStatus.WARNING
+
+            RavFeedAdapterStatus.ERROR ->
+                DiagnosticStatus.ERROR
+
+            else -> DiagnosticStatus.INFO
+        }
+
+        return RavDiagnosticItem(
+            id = "feed_adapter",
+            title = "Adapter Contract",
+            detail =
+                "Adapter state ${snapshot.adapterStatus.name}.",
+            status = status
+        )
+    }
+
+    private fun buildFeedDescriptorCheck(
+        snapshot: RavFeedSnapshot
+    ): RavDiagnosticItem {
+        val descriptor = snapshot.descriptor
+            ?: return RavDiagnosticItem(
+                id = "feed_descriptor",
+                title = "Feed Descriptor",
+                detail =
+                    "No descriptor is published while the feed is stopped.",
+                status = DiagnosticStatus.INFO
+            )
+
+        return RavDiagnosticItem(
+            id = "feed_descriptor",
+            title = "Feed Descriptor",
+            detail =
+                "${descriptor.sourceType.shortCode} • " +
+                        "${descriptor.transport} • " +
+                        "${descriptor.width}x${descriptor.height}" +
+                        "@${descriptor.fps} • " +
+                        "${descriptor.fitMode} • " +
+                        "${descriptor.rotationDegrees}° • " +
+                        "mirror ${yesNo(descriptor.mirrorHorizontal)} • " +
+                        "revision ${descriptor.revision}",
+            status = DiagnosticStatus.PASS
+        )
+    }
+
+    private fun buildFeedSourceAccessCheck(
+        context: Context,
+        snapshot: RavFeedSnapshot
+    ): RavDiagnosticItem {
+        val descriptor = snapshot.descriptor
+            ?: return RavDiagnosticItem(
+                id = "feed_source_access",
+                title = "Feed Source Access",
+                detail = "No active source access record.",
+                status = DiagnosticStatus.INFO
+            )
+
+        val runtime =
+            (context.applicationContext as
+                    RavCamApplication).feedRuntime
+        val record = runtime.sourceRegistry.get(
+            descriptor.sessionId
+        )
+
+        val valid = when (descriptor.transport) {
+            RavFeedTransport.CONTENT_PROVIDER -> {
+                val providerUri =
+                    record?.providerUri
+                providerUri != null &&
+                        runCatching {
+                            context.contentResolver
+                                .openFileDescriptor(
+                                    providerUri,
+                                    "r"
+                                )
+                                ?.use { true }
+                                ?: false
+                        }.getOrDefault(false)
+            }
+
+            RavFeedTransport.NETWORK_URI -> {
+                val scheme = runCatching {
+                    Uri.parse(
+                        record
+                            ?.originalSourceLocation
+                            .orEmpty()
+                    ).scheme?.lowercase()
+                }.getOrNull()
+                scheme in setOf(
+                    "http",
+                    "https",
+                    "rtsp",
+                    "rtsps"
+                )
+            }
+
+            else -> false
+        }
+
+        return RavDiagnosticItem(
+            id = "feed_source_access",
+            title = "Feed Source Access",
+            detail = if (valid) {
+                "Controlled ${descriptor.transport} access is registered; source details are redacted."
+            } else {
+                "The active source registry record is unavailable."
+            },
+            status = if (valid) {
+                DiagnosticStatus.PASS
+            } else {
+                DiagnosticStatus.ERROR
+            }
+        )
+    }
+
+    private fun buildFeedHeartbeatCheck(
+        snapshot: RavFeedSnapshot
+    ): RavDiagnosticItem {
+        val heartbeat = snapshot.heartbeat
+            ?: return RavDiagnosticItem(
+                id = "feed_heartbeat",
+                title = "Consumer Heartbeat",
+                detail = "No consumer has registered.",
+                status = DiagnosticStatus.INFO
+            )
+
+        val age = snapshot.heartbeatAgeMillis
+            ?: 0L
+        val stale =
+            snapshot.adapterStatus ==
+                    RavFeedAdapterStatus.STALE
+
+        return RavDiagnosticItem(
+            id = "feed_heartbeat",
+            title = "Consumer Heartbeat",
+            detail =
+                "${heartbeat.consumerPackage} • " +
+                        "${age / 1_000L}s old • " +
+                        if (stale) "stale" else "connected",
+            status = if (stale) {
+                DiagnosticStatus.WARNING
+            } else {
+                DiagnosticStatus.PASS
+            }
+        )
+    }
+
+    private fun buildFeedSecurityCheck(
+        context: Context,
+        snapshot: RavFeedSnapshot
+    ): RavDiagnosticItem {
+        val packageManager =
+            context.packageManager
+        val packageInfo =
+            packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.GET_PERMISSIONS
+            )
+        val broadPermissions = packageInfo
+            .requestedPermissions
+            .orEmpty()
+            .filter {
+                it ==
+                        "android.permission.MANAGE_EXTERNAL_STORAGE" ||
+                        it == android.Manifest.permission
+                            .READ_EXTERNAL_STORAGE ||
+                        it == android.Manifest.permission
+                            .WRITE_EXTERNAL_STORAGE
+            }
+
+        val signaturePermissionConfigured =
+            runCatching {
+                val permission =
+                    packageManager.getPermissionInfo(
+                        "com.ravcam.vcam.permission.ACCESS_FEED",
+                        0
+                    )
+                permission.protection ==
+                        android.content.pm.PermissionInfo
+                            .PROTECTION_SIGNATURE
+            }.getOrDefault(false)
+
+        val serviceConfigured =
+            runCatching {
+                packageManager.getServiceInfo(
+                    ComponentName(
+                        context,
+                        RavFeedService::class.java
+                    ),
+                    0
+                ).exported
+            }.getOrDefault(false)
+
+        val providerConfigured =
+            runCatching {
+                val provider =
+                    packageManager.getProviderInfo(
+                        ComponentName(
+                            context,
+                            RavFeedContentProvider::class.java
+                        ),
+                        0
+                    )
+                !provider.exported &&
+                        provider.grantUriPermissions &&
+                        provider.writePermission == null
+            }.getOrDefault(false)
+
+        val runtime =
+            (context.applicationContext as
+                    RavCamApplication).feedRuntime
+        val activeConsumers =
+            snapshot.descriptor
+                ?.sessionId
+                ?.let(
+                    runtime.sourceRegistry::
+                        activeConsumerCount
+                )
+                ?: 0
+
+        val secure =
+            broadPermissions.isEmpty() &&
+                    signaturePermissionConfigured &&
+                    serviceConfigured &&
+                    providerConfigured
+
+        return RavDiagnosticItem(
+            id = "feed_security",
+            title = "Feed Security",
+            detail = if (secure) {
+                "Signature permission declared; capability service enabled; read-only URI grants enabled; $activeConsumers active consumer(s); no broad storage permission."
+            } else {
+                "Feed component security or storage permission configuration needs attention."
+            },
+            status = if (secure) {
+                DiagnosticStatus.PASS
+            } else {
+                DiagnosticStatus.ERROR
+            }
+        )
+    }
+
+    private fun buildFeedConfigurationCheck(
+        snapshot: RavFeedSnapshot
+    ): RavDiagnosticItem {
+        return RavDiagnosticItem(
+            id = "feed_configuration",
+            title = "Feed Configuration",
+            detail = if (
+                snapshot.configurationChanged
+            ) {
+                "Source or output profile changed; restart the feed to apply it."
+            } else {
+                "The active descriptor matches the selected configuration."
+            },
+            status = if (
+                snapshot.configurationChanged
+            ) {
+                DiagnosticStatus.WARNING
+            } else {
+                DiagnosticStatus.PASS
+            }
         )
     }
 
