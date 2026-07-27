@@ -42,6 +42,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.rtsp.RtspMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
@@ -124,6 +125,32 @@ private fun ExoPlayerPreviewRenderer(
         )
     }
 
+    val rtspMediaSource = remember(
+        source.type,
+        mediaItem
+    ) {
+        if (source.type == MediaSourceType.RTSP) {
+            /*
+             * Emulator and VM networking commonly blocks or
+             * misroutes the UDP RTP ports negotiated by RTSP.
+             * Interleaved RTP-over-TCP keeps control and media
+             * on the reachable RTSP connection.
+             */
+            RtspMediaSource.Factory()
+                .setForceUseRtpTcp(true)
+                .createMediaSource(mediaItem)
+        } else {
+            null
+        }
+    }
+
+    val mediaMtxHlsFallback = remember(
+        source.type,
+        source.location
+    ) {
+        buildMediaMtxHlsFallback(source)
+    }
+
     var rendererState by remember(
         source.type,
         source.location
@@ -171,8 +198,12 @@ private fun ExoPlayerPreviewRenderer(
 
     DisposableEffect(
         exoPlayer,
-        mediaItem
+        mediaItem,
+        rtspMediaSource,
+        mediaMtxHlsFallback
     ) {
+        var attemptedMediaMtxFallback = false
+
         val listener = object : Player.Listener {
 
             override fun onPlaybackStateChanged(
@@ -194,13 +225,38 @@ private fun ExoPlayerPreviewRenderer(
             override fun onPlayerError(
                 error: PlaybackException
             ) {
+                if (
+                    !attemptedMediaMtxFallback &&
+                    mediaMtxHlsFallback != null &&
+                    hasMalformedEmptySdp(error)
+                ) {
+                    /*
+                     * Some MediaMTX releases emit a whitespace-only
+                     * mandatory SDP session name ("s= "). Media3
+                     * rejects it before SETUP, while MediaMTX exposes
+                     * the same path as HLS. Preserve generic RTSP
+                     * support, but recover this identifiable local
+                     * MediaMTX interoperability failure.
+                     */
+                    attemptedMediaMtxFallback = true
+                    rendererState =
+                        RendererLoadState.LOADING
+                    errorMessage = null
+                    exoPlayer.setMediaItem(
+                        mediaMtxHlsFallback
+                    )
+                    exoPlayer.prepare()
+                    exoPlayer.playWhenReady = true
+                    return
+                }
+
                 rendererState = RendererLoadState.ERROR
 
                 errorMessage =
-                    error.localizedMessage
-                        ?: defaultPlaybackError(
-                            source.type
-                        )
+                    safePlaybackError(
+                        source.type,
+                        error
+                    )
             }
         }
 
@@ -209,7 +265,13 @@ private fun ExoPlayerPreviewRenderer(
         rendererState = RendererLoadState.LOADING
         errorMessage = null
 
-        exoPlayer.setMediaItem(mediaItem)
+        if (rtspMediaSource != null) {
+            exoPlayer.setMediaSource(
+                rtspMediaSource
+            )
+        } else {
+            exoPlayer.setMediaItem(mediaItem)
+        }
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
 
@@ -523,6 +585,120 @@ private fun defaultPlaybackError(
         else ->
             "Unable to initialize this media source."
     }
+}
+
+private fun safePlaybackError(
+    type: MediaSourceType,
+    error: PlaybackException
+): String {
+    if (type != MediaSourceType.RTSP) {
+        return defaultPlaybackError(type)
+    }
+
+    val causeText = playbackCauseText(error)
+
+    return when {
+        causeText.contains(
+            "DESCRIBE 404",
+            ignoreCase = true
+        ) ->
+            "The RTSP path is offline or does not exist. " +
+                "Keep the publisher running and include its path, " +
+                "for example rtsp://host:8554/ravcam."
+
+        causeText.contains(
+            "Malformed SDP line: s=",
+            ignoreCase = true
+        ) ->
+            "The RTSP server returned an empty SDP session name " +
+                "that Android Media3 cannot parse. Update the " +
+                "server or use its HLS endpoint for this stream."
+
+        causeText.contains(
+            "400 Bad Request",
+            ignoreCase = true
+        ) ->
+            "The RTSP address was rejected. Verify that the URL " +
+                "includes the published stream path."
+
+        else ->
+            defaultPlaybackError(type)
+    }
+}
+
+private fun hasMalformedEmptySdp(
+    error: PlaybackException
+): Boolean {
+    return playbackCauseText(error).contains(
+        "Malformed SDP line: s=",
+        ignoreCase = true
+    )
+}
+
+private fun playbackCauseText(
+    error: PlaybackException
+): String {
+    return buildString {
+        var current: Throwable? = error
+        var depth = 0
+
+        while (current != null && depth < 8) {
+            append(
+                current.message.orEmpty()
+            )
+            append('\n')
+            current = current.cause
+            depth += 1
+        }
+    }
+}
+
+private fun buildMediaMtxHlsFallback(
+    source: RavMediaSource
+): MediaItem? {
+    if (source.type != MediaSourceType.RTSP) {
+        return null
+    }
+
+    val sourceUri = Uri.parse(source.location)
+    val host = sourceUri.host
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+    val sourcePath = sourceUri.path
+        ?.trim('/')
+        ?.takeIf { it.isNotBlank() }
+        ?: return null
+
+    /*
+     * Only infer MediaMTX's documented default HLS endpoint
+     * from its default RTSP port. Do not rewrite arbitrary
+     * RTSP servers or credential-bearing addresses.
+     */
+    if (
+        sourceUri.scheme != "rtsp" ||
+        sourceUri.port != 8554 ||
+        sourceUri.userInfo != null
+    ) {
+        return null
+    }
+
+    val hlsUri = Uri.Builder()
+        .scheme("http")
+        .encodedAuthority(
+            if (host.contains(':')) {
+                "[$host]:8888"
+            } else {
+                "$host:8888"
+            }
+        )
+        .appendEncodedPath(sourcePath)
+        .appendPath("index.m3u8")
+        .build()
+
+    return MediaItem.Builder()
+        .setUri(hlsUri)
+        .setMimeType(MimeTypes.APPLICATION_M3U8)
+        .build()
 }
 
 @Composable
